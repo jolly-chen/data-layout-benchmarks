@@ -1,5 +1,6 @@
 from multiprocessing import Pool
 from functools import partial
+from itertools import permutations
 import numpy as np
 import math
 import os
@@ -90,7 +91,7 @@ def convert_codeword_to_partitions(set, codeword):
 
 def generate_partitions(members, g, proc_num):
     """
-    Generate all set partitions as codewords.
+    Generate all set partitions and permute elements in each subset.
 
     Based on "Parallel algorithms for generating subsets and set partitions" in
     Lecture Notes in Computer Science, vol 450: https://link.springer.com/chapter/10.1007/3-540-52921-7_57
@@ -98,7 +99,7 @@ def generate_partitions(members, g, proc_num):
     # print(proc_num, g, members)
 
     n = len(members)
-    t = proc_num  * g + 1
+    t = proc_num * g + 1
     codeword, r = unrank_partition(t, n)
     # print(codeword)
     b = np.repeat(1, n)
@@ -107,7 +108,6 @@ def generate_partitions(members, g, proc_num):
     j = 0
     max_codeword = 1
 
-    codeword_list = []
     for s in range(2, n):
         if codeword[s - 1] > max_codeword:
             max_codeword = codeword[s - 1]
@@ -124,7 +124,16 @@ def generate_partitions(members, g, proc_num):
 
             while codeword[n - 1] <= n - j and l != g:
                 l += 1
-                codeword_list.append(codeword.copy())
+                partitions = convert_codeword_to_partitions(members, codeword)
+                if any(len(p) > 1 for p in partitions):
+                    for i, p in enumerate(partitions):
+                        if len(p) > 1:
+                            for perm in permutations(p):
+                                partitions[i] = list(perm)
+                                print(partitions)
+                else:
+                    print(partitions)
+
                 codeword[n - 1] += 1
 
             r = b[j - 1]
@@ -133,25 +142,20 @@ def generate_partitions(members, g, proc_num):
             if codeword[r - 1] > r - j:
                 j -= 1
 
-    for cw in codeword_list:
-        print(convert_codeword_to_partitions(members, cw))
-        # TODO: write to transformations.h
-
 
 def generate_transformations(struct_name, members):
     with open("transformations.h", "w") as f:
         f.write("#ifndef TRANSFORMATIONS_H\n")
         f.write("#define TRANSFORMATIONS_H\n\n")
 
-    pool_size = 1 # FIXME: parallel is not working yet; produces duplicates
+    pool_size = 1  # FIXME: parallel is not working yet; produces duplicates
     pool = Pool(processes=pool_size)
     g = np.ceil(B(len(members)) / float(pool_size)).astype(int)
     pool.map(partial(generate_partitions, members, g), range(0, pool_size))
-    # TODO: generate permutations of elements in subsets as well
 
     with open("transformations.h", "a") as f:
         f.write("\n#endif // TRANSFORMATIONS_H\n")
 
 
 if __name__ == "__main__":
-    generate_transformations(struct_name_base, range(7))
+    generate_transformations(struct_name_base, range(3))
