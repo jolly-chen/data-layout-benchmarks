@@ -160,21 +160,24 @@ def generate_subsets(members):
         if c
     ]
 
-    with open("transformations.h", "w") as f:
-        f.write("#ifndef TRANSFORMATIONS_H\n")
-        f.write("#define TRANSFORMATIONS_H\n")
-        f.write("#include \"datastructures.h\"\n\n")
+    with open("datastructures.h", "w") as f:
+        f.write("#ifndef DATASTRUCTURES_H\n")
+        f.write("#define DATASTRUCTURES_H\n")
+        f.write('#include "datastructures.h"\n')
+        f.write('#include "struct_transformer.h"\n\n')
+        f.write(
+            f"struct {struct_name_base} {{\n{';\n'.join([f'    {dtype} {name}' for dtype, name in members])};\n}};\n\n"
+        )
+        f.write("template <auto... Members> struct TransformedParticle;\n\n")
 
-    with open("transformations.h", "a") as f:
         for subset in subsets:
             f.write(
                 "consteval {{ TransformStruct<Particle, TransformedParticle>(SplitOp({{{}}})); }}\n".format(
                     ", ".join(str(i) for i in subset)
                 )
             )
-        f.write("\n#endif // TRANSFORMATIONS_H\n")
-
+        f.write("\n#endif // DATASTRUCTURES_H\n")
 
 if __name__ == "__main__":
     generate_transformations(struct_name_base, range(2))
-    print(generate_subsets(data_members))
+    generate_subsets(data_members)
