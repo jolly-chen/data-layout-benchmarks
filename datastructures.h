@@ -45,10 +45,5 @@ struct Particle {
 
 template <auto... Members> struct TransformedParticle;
 
-consteval void GenerateTransformedParticles() {
-  TransformStruct<Particle, TransformedParticle>(SplitOp({0, 1, 2}), SplitOp({3, 4}));
-}
-
-consteval { GenerateTransformedParticles(); }
 
 #endif // DATASTRUCTURES_H
