@@ -1,6 +1,6 @@
 from multiprocessing import Pool
 from functools import partial
-from itertools import permutations
+from itertools import permutations, chain, combinations
 import numpy as np
 import math
 import os
@@ -42,13 +42,13 @@ def B(n):
 
 
 def D(n, r, d):
-    if r == 2 and (d == 1):
+    if (r == 2) and (d == 1):
         return B(n)
 
-    if r == n and (1 <= d and d <= n - 1):
+    if (r == n) and (1 <= d and d <= n - 1):
         return d + 1
 
-    if r == n + 1 and (1 <= d and d <= n):
+    if (r == n + 1) and (1 <= d and d <= n):
         return 1
 
     if (3 <= r and r <= n - 1) and (1 <= d and d <= r - 1):
@@ -59,7 +59,7 @@ def unrank_partition(t, n):
     """Unrank the r-th partition of n elements into k non-empty subsets."""
     # This is a placeholder for the actual unranking algorithm.
     # Implementing this is non-trivial and requires combinatorial logic.
-    codeword = np.repeat(1, n)
+    codeword = np.repeat(n + 1, n)
 
     if not 0 < t and t <= D(n, 2, 1):
         return codeword, 0
@@ -101,7 +101,6 @@ def generate_partitions(members, g, proc_num):
     n = len(members)
     t = proc_num * g + 1
     codeword, r = unrank_partition(t, n)
-    # print(codeword)
     b = np.repeat(1, n)
     l = 0
     r = n
@@ -144,18 +143,38 @@ def generate_partitions(members, g, proc_num):
 
 
 def generate_transformations(struct_name, members):
-    with open("transformations.h", "w") as f:
-        f.write("#ifndef TRANSFORMATIONS_H\n")
-        f.write("#define TRANSFORMATIONS_H\n\n")
-
     pool_size = 1  # FIXME: parallel is not working yet; produces duplicates
     pool = Pool(processes=pool_size)
     g = np.ceil(B(len(members)) / float(pool_size)).astype(int)
     pool.map(partial(generate_partitions, members, g), range(0, pool_size))
 
+
+def generate_subsets(members):
+    "Subsequences of the iterable from shortest to longest."
+    s = range(len(members))
+    subsets = [
+        list(p)
+        for r in range(len(s) + 1)
+        for c in combinations(s, r)
+        for p in permutations(c)
+        if c
+    ]
+
+    with open("transformations.h", "w") as f:
+        f.write("#ifndef TRANSFORMATIONS_H\n")
+        f.write("#define TRANSFORMATIONS_H\n")
+        f.write("#include \"datastructures.h\"\n\n")
+
     with open("transformations.h", "a") as f:
+        for subset in subsets:
+            f.write(
+                "consteval {{ TransformStruct<Particle, TransformedParticle>(SplitOp({{{}}})); }}\n".format(
+                    ", ".join(str(i) for i in subset)
+                )
+            )
         f.write("\n#endif // TRANSFORMATIONS_H\n")
 
 
 if __name__ == "__main__":
-    generate_transformations(struct_name_base, range(3))
+    generate_transformations(struct_name_base, range(2))
+    print(generate_subsets(data_members))
