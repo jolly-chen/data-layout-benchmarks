@@ -7,13 +7,13 @@ import os
 import sys
 
 data_members = [
-    ("int", "id"),
+    # ("int", "id"),
     ("float", "pt"),
     ("float", "eta"),
     ("float", "phi"),
     ("float", "e"),
-    ("char", "charge"),
-    ("std::array<std::array<double, 3>, 3>", "posCovMatrix"),
+    # ("char", "charge"),
+    # ("std::array<std::array<double, 3>, 3>", "posCovMatrix"),
 ]
 
 struct_name_base = "Particle"
@@ -149,7 +149,7 @@ def generate_transformations(struct_name, members):
     pool.map(partial(generate_partitions, members, g), range(0, pool_size))
 
 
-def generate_subsets(members):
+def generate_subsets(struct_name_base, members):
     "Subsequences of the iterable from shortest to longest."
     s = range(len(members))
     subsets = [
@@ -159,25 +159,26 @@ def generate_subsets(members):
         for p in permutations(c)
         if c
     ]
-
     with open("datastructures.h", "w") as f:
         f.write("#ifndef DATASTRUCTURES_H\n")
         f.write("#define DATASTRUCTURES_H\n")
         f.write('#include "datastructures.h"\n')
         f.write('#include "struct_transformer.h"\n\n')
         f.write(
-            f"struct {struct_name_base} {{\n{';\n'.join([f'    {dtype} {name}' for dtype, name in members])};\n}};\n\n"
+            f"struct {struct_name_base} {{\n{';\n'.join([f'    {dtype} &{name}' for dtype, name in members])};\n}};\n\n"
         )
-        f.write("template <auto... Members> struct TransformedParticle;\n\n")
+        f.write(f"template <auto Members> struct Sub{struct_name_base};\n\n")
 
+        f.write(
+            "// Forward declarations of structures with a subset of Particle members\n"
+        )
         for subset in subsets:
             f.write(
-                "consteval {{ TransformStruct<Particle, TransformedParticle>(SplitOp({{{}}})); }}\n".format(
-                    ", ".join(str(i) for i in subset)
-                )
+                f"consteval {{ SplitStruct<{struct_name_base}, Sub{struct_name_base}>(SplitOp({{{', '.join(str(i) for i in subset)}}})); }}\n"
             )
         f.write("\n#endif // DATASTRUCTURES_H\n")
 
+
 if __name__ == "__main__":
-    generate_transformations(struct_name_base, range(2))
-    generate_subsets(data_members)
+    # generate_transformations(struct_name_base, range(2))
+    generate_subsets(struct_name_base, data_members)

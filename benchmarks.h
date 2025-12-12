@@ -71,8 +71,8 @@ inline double InvariantMassSequential(const std::vector<T> &v1,
 }
 
 template <typename T>
-inline void InvariantMassRandom(const std::vector<T> &v1,
-                                  const std::vector<T> &v2,
+inline void InvariantMassRandom(const T &v1,
+                                  const T &v2,
                                   std::vector<double> &results) {
   assert(v1.size() == v2.size());
   const size_t n = v1.size();
