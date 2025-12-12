@@ -1,4 +1,4 @@
-#include "transformations.h"
+#include "datastructures.h"
 #include <iostream>
 
 int main() {
@@ -12,4 +12,8 @@ int main() {
   g.phi = 1.5;
   g.e = 20.0;
   std::cout << "phi: " << g.phi << ", e: " << g.e << "\n";
+
+  TransformedParticle<SplitOp({0}).data()> h;
+  h.id = 42;
+  std::cout << "id: " << h.id << "\n";
 }
