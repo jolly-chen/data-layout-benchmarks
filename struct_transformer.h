@@ -7,6 +7,10 @@
 #include <experimental/meta>
 #include <iostream>
 
+consteval auto nsdms(std::meta::info type) {
+  return define_static_array(nonstatic_data_members_of(type, std::meta::access_context::current()));
+}
+
 consteval auto SplitOp(std::vector<int> indices) {
   return define_static_array(indices);
 }
@@ -34,37 +38,44 @@ consteval void SplitStruct(SplitOps... ops) {
 };
 // clang-format on
 
-// template <typename Original, typename P1, typename P2>
-// struct ParitionedContainer {
-//   P1 *p1;
-//   P2 *p2;
-//   size_t n;
+template <typename Original, typename... T> struct PartitionedContainer {
+  struct Partitions;
+  consteval {
+    define_aggregate(^^Partitions, { data_member_spec(add_pointer(^^T), { .name = identifier_of(nsdms(^^T)[0])})... });
+  }
 
-//   ParitionedContainer(size_t n) : n(n) {
-//     p1 = std::allocator<P1>().allocate(n);
-//     p2 = std::allocator<P2>().allocate(n);
-//   }
+  Partitions p;
+  size_t n;
 
-//   inline Original operator[](size_t index) const {
-//     return {p1[index].pt, p1[index].eta, p1[index].phi, p2[index].e};
-//   }
+  PartitionedContainer(size_t n) : n(n) {
+    // Allocate each partition
+    template for (constexpr auto &m : nsdms(^^Partitions)) {
+      using MemType = typename[:remove_pointer(type_of(m)):];
+      p.[:m:] = std::allocator<MemType>().allocate(n);
+    }
+  }
 
-//   size_t size() const {
-//     // Assuming both partitions have the same size
-//     return n;
-//   }
-// };
+  inline Original operator[](size_t index) const {
+    auto get_arg = [index, this]<std::meta::info om>() constexpr -> typename[: type_of(om) :] {
+      template for (constexpr auto &part : nsdms(^^Partitions)) {
+        template for (constexpr auto &pm : nsdms(remove_pointer(type_of(part)))) {
+          if constexpr(identifier_of(om) == identifier_of(pm)) {
+            return p.[: part :][index].[: pm :];
+          }
+        }
+      }
+    };
 
-// template <typename Original, typename T> struct PartitionedContainer {
-//   struct Partitions;
+    auto construct_object = [&, this]<size_t... Is>(std::index_sequence<Is...>) constexpr -> Original {
+      return Original{ get_arg.template operator()<nsdms(^^Original)[Is]>()... };
+    };
+    return construct_object(std::make_index_sequence<nsdms(^^Original).size()>{});
 
-//   consteval {
-//     define_aggregate(^^Partitions, {data_member_spec(^^T)});
-//   }
+    // return { p.pt[index].pt, p.pt[index].eta, p.pt[index].phi, p.e[index].e };
+  }
 
-//   PartitionedContainer(size_t n) {}
+  size_t size() const { return n; }
+};
 
-//   // inline Original operator[](size_t index) { return Original{}; }
-// };
 
 #endif // STRUCT_TRANSFORMER_H
