@@ -8,7 +8,7 @@ add_compile_options(-Wall -Wextra -freflection-latest -stdlib=libc++)
 add_link_options(-stdlib=libc++)
 
 add_executable(test test.cpp)
-# target_precompile_headers(test PUBLIC datastructures.h)
+# target_precompile_headers(test PUBLIC datastructures.h) # crashes the compiler?
 
 add_executable(main main.cpp)
-# target_precompile_headers(main REUSE_FROM test)
+# target_precompile_headers(main PUBLIC datastructures.h) # crashes the compiler?
