@@ -5,40 +5,23 @@
 
 using Clock = std::chrono::high_resolution_clock;
 
-// template <typename T> void RunInvariantMassRandom() {
-//   std::vector<T> v1(1000);
-//   std::vector<T> v2(1000);
-//   std::vector<double> results(1000);
+template <typename T, typename... Partitions>
+void RunInvariantMassRandom(size_t n) {
+  using PC = PartitionedContainer<T, Partitions...>;
+  PC v1(n), v2(n);
 
-//   auto start = Clock::now();
-//   InvariantMassRandom(v1, v2, results);
-//   auto end = Clock::now();
+  std::vector<double> results(n);
 
-//   std::chrono::duration<double> elapsed = end - start;
-//   std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
-// }
+  auto start = Clock::now();
+  InvariantMassRandom(v1, v2, results);
+  auto end = Clock::now();
 
-
-template <typename T>
-void RunInvariantMassRandomPartitioned() {
-  using PC = PartitionedContainer<T, SubParticle<SplitOp({0, 1, 2}).data()>, SubParticle<SplitOp({3}).data()>>;
-  PC v1(10), v2(10);
-
-  v1[0].pt = 0;
-
-  // std::vector<double> results(1000);
-
-  // auto start = Clock::now();
-  // InvariantMassRandom(v1, v2, results);
-  // auto end = Clock::now();
-
-  // std::chrono::duration<double> elapsed = end - start;
-  // std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
+  std::chrono::duration<double> elapsed = end - start;
+  std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
 }
 
 int main() {
-  //   RunInvariantMassRandom<Particle>();
-  RunInvariantMassRandomPartitioned<Particle>();
+  RunInvariantMassRandom<Particle, SubParticle<SplitOp({0, 1, 2}).data()>, SubParticle<SplitOp({3}).data()>>(10000000);
   return 0;
 }
 
