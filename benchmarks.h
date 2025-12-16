@@ -1,8 +1,9 @@
 #ifndef BENCHMARKS_H
 #define BENCHMARKS_H
 
-#include <math.h>
+#include <cmath>
 #include <vector>
+#include <cassert>
 
 template <typename T>
 inline double ComputeInvariantMass(const T &pt1, const T &eta1, const T &phi1,
