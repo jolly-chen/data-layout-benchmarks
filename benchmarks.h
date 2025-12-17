@@ -1,9 +1,10 @@
 #ifndef BENCHMARKS_H
 #define BENCHMARKS_H
 
-#include <cmath>
-#include <vector>
 #include <cassert>
+#include <cmath>
+#include <iostream>
+#include <vector>
 
 template <typename T>
 inline double ComputeInvariantMass(const T &pt1, const T &eta1, const T &phi1,
@@ -56,34 +57,6 @@ inline double ComputeInvariantMass(const T &pt1, const T &eta1, const T &phi1,
 }
 
 template <typename T>
-inline double InvariantMassSequential(const std::vector<T> &v1,
-                                      const std::vector<T> &v2,
-                                      std::vector<double> &results) {
-  assert(v1.size() == v2.size());
-  const size_t n = v1.size();
-
-  for (size_t i = 0; i < n; i++) {
-    results[i] = ComputeInvariantMass(v1[i].pt, v1[i].eta, v1[i].phi, v1[i].e,
-                                      v2[i].pt, v2[i].eta, v2[i].phi, v2[i].e);
-  }
-}
-
-template <typename T>
-inline void InvariantMassRandom(const T &v1,
-                                  const T &v2,
-                                  std::vector<double> &results) {
-  assert(v1.size() == v2.size());
-  const size_t n = v1.size();
-
-  for (size_t i = 0; i < n; i++) {
-    size_t idx = rand() % n;
-    results[i] =
-        ComputeInvariantMass(v1[idx].pt, v1[idx].eta, v1[idx].phi, v1[idx].e,
-                             v2[idx].pt, v2[idx].eta, v2[idx].phi, v2[idx].e);
-  }
-}
-
-template <typename T>
 inline double DeltaR2(const T &eta1, const T &phi1, const T &eta2,
                       const T &phi2) {
   const auto deta = eta1 - eta2;
@@ -116,15 +89,46 @@ inline void InvariantMassSequential(const T &v1, const T &v2,
   }
 }
 
+namespace kernels {
 template <typename T>
-double DeltaR2Pairwise(const std::vector<T> &v1, const std::vector<T> &v2,
-                       size_t n, std::vector<double> &results) {
-  for (size_t i = 0; i < v1.size(); i++) {
-    for (size_t j = 0; j < v2.size(); j++) {
+inline void InvariantMassSequential(const T &v1, const T &v2,
+                                    std::vector<double> &results) {
+  assert(v1.size() == v2.size() && v1.size() == results.size());
+  const size_t n = v1.size();
+
+  for (size_t i = 0; i < 1; i++) {
+    results[i] = ComputeInvariantMass(v1[i].pt, v1[i].eta, v1[i].phi, v1[i].e,
+                                      v2[i].pt, v2[i].eta, v2[i].phi, v2[i].e);
+  }
+}
+
+template <typename T>
+inline void InvariantMassRandom(const T &v1, const T &v2,
+                                std::vector<double> &results) {
+  assert(v1.size() == v2.size());
+  const size_t n = v1.size();
+
+  for (size_t i = 0; i < n; i++) {
+    size_t idx = rand() % n;
+    results[i] =
+        ComputeInvariantMass(v1[idx].pt, v1[idx].eta, v1[idx].phi, v1[idx].e,
+                             v2[idx].pt, v2[idx].eta, v2[idx].phi, v2[idx].e);
+  }
+}
+
+template <typename T>
+inline void DeltaR2Pairwise(const T &v1, const T &v2,
+                            std::vector<double> &results) {
+  assert(v1.size() == v2.size());
+  const size_t n = v1.size();
+
+  for (size_t i = 0; i < n; i++) {
+    for (size_t j = 0; j < n; j++) {
       results[i * n + j] = DeltaR2(v1[i].eta, v1[i].phi, v2[j].eta, v2[j].phi);
     }
   }
 }
+} // namespace kernels
 
 template <typename T>
 inline void DeltaR2Pairwise(const T &v1, const T &v2,
