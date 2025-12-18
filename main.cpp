@@ -1,8 +1,8 @@
 #include "benchmarks.h"
 #include "datastructures.h"
 #include <chrono>
-#include <iostream>
 #include <fstream>
+#include <iostream>
 
 using Clock = std::chrono::high_resolution_clock;
 
@@ -30,8 +30,9 @@ void read_data(Container &v, std::string filename) {
   }
 }
 
-template <typename Container, typename BenchmarkFunc>
-void RunBenchmark(size_t in_size, size_t out_size, BenchmarkFunc func) {
+
+template <typename Container, std::meta::info BenchmarkFunc>
+void RunBenchmark(size_t in_size, size_t out_size) {
   Container v1(in_size), v2(in_size);
   read_data(v1, "/data/data-layout-benchmarks/data/100k.csv");
   read_data(v2, "/data/data-layout-benchmarks/data/100k.csv");
@@ -39,26 +40,98 @@ void RunBenchmark(size_t in_size, size_t out_size, BenchmarkFunc func) {
   std::vector<double> results(out_size);
 
   auto start = Clock::now();
-  func(v1, v2, results);
+  [: substitute(BenchmarkFunc, { ^^Container }) :](v1, v2, results);
   auto end = Clock::now();
 
-  std::chrono::duration<double> elapsed = end - start;
-  std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
+  std::chrono::duration<double, std::milli> elapsed = end - start;
+  std::cout << identifier_of(BenchmarkFunc)
+            << "," << Container::get_partitions_string()
+            << "," << in_size
+            << "," << sizeof(Container)
+            << "," << elapsed.count() << std::endl;
 }
 
 template <typename Container> void RunAllBenchmarks(size_t n) {
-  std::cout << "Running InvariantMassRandom\n";
-  RunBenchmark<Container>(n, n, kernels::InvariantMassRandom<Container>);
-
-  std::cout << "Running InvariantMassSequential\n";
-  RunBenchmark<Container>(n, n, kernels::InvariantMassSequential<Container>);
-
-  std::cout << "Running DeltaR2Pairwise\n";
-  RunBenchmark<Container>(n, n*n, kernels::DeltaR2Pairwise<Container>);
+  RunBenchmark<Container, ^^kernels::InvariantMassRandom>(n, n);
+  RunBenchmark<Container, ^^kernels::InvariantMassSequential>(n, n);
+  RunBenchmark<Container, ^^kernels::DeltaR2Pairwise>(n, n*n);
 }
 
 int main() {
-  RunAllBenchmarks<PartitionedContainer<
-      Particle, SubParticle<SplitOp({0, 1, 2, 3}).data()>>>(10);
-  return 0;
+  for (size_t input_size : {1000, 10000, 100000}) {
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 1, 2, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 1, 3, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 2, 1, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 2, 3, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 3, 1, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 3, 2, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 0, 2, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 0, 3, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 2, 0, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 2, 3, 0}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 3, 0, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 3, 2, 0}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 0, 1, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 0, 3, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 1, 0, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 1, 3, 0}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 3, 0, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 3, 1, 0}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 0, 1, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 0, 2, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 1, 0, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 1, 2, 0}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 2, 0, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 2, 1, 0}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 1, 2}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 2, 1}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 0, 2}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 2, 0}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 0, 1}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 1, 0}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 1, 3}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 3, 1}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 0, 3}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 3, 0}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 0, 1}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 1, 0}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 1}).data()>, SubParticle<SplitOp({2, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 0}).data()>, SubParticle<SplitOp({2, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 0}).data()>, SubParticle<SplitOp({2, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 0}).data()>, SubParticle<SplitOp({3, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 1}).data()>, SubParticle<SplitOp({2}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({1, 0}).data()>, SubParticle<SplitOp({2}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 2, 3}).data()>, SubParticle<SplitOp({1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 3, 2}).data()>, SubParticle<SplitOp({1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 0, 3}).data()>, SubParticle<SplitOp({1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 3, 0}).data()>, SubParticle<SplitOp({1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 0, 2}).data()>, SubParticle<SplitOp({1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 2, 0}).data()>, SubParticle<SplitOp({1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 2}).data()>, SubParticle<SplitOp({1, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 0}).data()>, SubParticle<SplitOp({1, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 0}).data()>, SubParticle<SplitOp({1, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 0}).data()>, SubParticle<SplitOp({3, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 2}).data()>, SubParticle<SplitOp({1}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({2, 0}).data()>, SubParticle<SplitOp({1}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 3}).data()>, SubParticle<SplitOp({1, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 0}).data()>, SubParticle<SplitOp({1, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 0}).data()>, SubParticle<SplitOp({1, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 0}).data()>, SubParticle<SplitOp({2, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({1, 2, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({1, 3, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({2, 1, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({2, 3, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({3, 1, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({3, 2, 1}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({1, 2}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({2, 1}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0, 3}).data()>, SubParticle<SplitOp({1}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({3, 0}).data()>, SubParticle<SplitOp({1}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({1, 3}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({3, 1}).data()>, SubParticle<SplitOp({2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({1}).data()>, SubParticle<SplitOp({2, 3}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({1}).data()>, SubParticle<SplitOp({3, 2}).data()>>>(input_size);
+		RunAllBenchmarks<PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>, SubParticle<SplitOp({1}).data()>, SubParticle<SplitOp({2}).data()>, SubParticle<SplitOp({3}).data()>>>(input_size);
+	}	
+	return 0;
 }
