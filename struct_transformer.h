@@ -85,6 +85,7 @@ template <typename Original, typename... T> struct PartitionedContainer {
   }
 
   inline Original operator[](size_t index) const {
+    #pragma clang diagnostic ignored "-Wreturn-type"
     auto get_arg = [index,
                     this]<std::meta::info Om, typename Out>() constexpr -> Out {
       template for (constexpr auto &part : nsdms(^^Partitions)) {
@@ -116,6 +117,7 @@ template <typename Original, typename... T> struct PartitionedContainer {
     }
   }
 
+  /* Get a string that contains the partitioning information stored in the parameter pack T. */
   static std::string get_partitions_string() {
     auto get_static_array_string = [](std::span<const int> arr, size_t i) {
       std::string r = "";
