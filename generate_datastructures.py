@@ -61,7 +61,7 @@ def convert_codeword_to_partitions(set, codeword):
     """
     partitions = [[] for _ in range(len(codeword))]
     for i, c in enumerate(codeword):
-        partitions[c - 1].append(set[i])
+        partitions[c - 1].append(i)
     return [p for p in partitions if p]
 
 
@@ -109,7 +109,7 @@ def generate_partitioned_structs(struct_name_base, members):
         lines = f.readlines()
 
     with open("main.cpp", "w") as f:
-        main_start = [i for i, l in enumerate(lines) if "main()" in l][0]
+        main_start = [i for i, l in enumerate(lines) if "GetProblemSizes" in l][1]
         f.writelines(lines[: main_start + 1])
 
         for partition in generate_partitions(members):
@@ -117,10 +117,10 @@ def generate_partitioned_structs(struct_name_base, members):
             for p in partition:
                 splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in p)}}}).data()>")
 
-            f.write(f"\tRunInvariantMassRandom<PartitionedContainer<{struct_name_base}, {', '.join(splitops)}>>(100);\n")
+            f.write(f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}, {', '.join(splitops)}>>(n);\n")
 
-        f.write("\n\treturn 0;\n}\n")
+        f.write("\t}\t\n\treturn 0;\n}\n")
 
 if __name__ == "__main__":
     generate_subsets(struct_name_base, data_members)
-    generate_partitioned_structs(struct_name_base, range(4))
+    generate_partitioned_structs(struct_name_base, data_members)
