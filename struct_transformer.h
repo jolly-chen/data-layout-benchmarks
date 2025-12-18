@@ -16,8 +16,8 @@ template <auto... V> struct replicator_type {
 
 template <auto... V> replicator_type<V...> replicator = {};
 
-consteval auto expand_all(std::span<std::meta::info const> r)
-    -> std::meta::info {
+consteval auto
+expand_all(std::span<std::meta::info const> r) -> std::meta::info {
   std::vector<std::meta::info> rv;
   for (std::meta::info i : r) {
     rv.push_back(reflect_constant(i));
@@ -26,7 +26,8 @@ consteval auto expand_all(std::span<std::meta::info const> r)
 }
 
 consteval auto nsdms(std::meta::info type) {
-  return define_static_array(nonstatic_data_members_of(type, std::meta::access_context::current()));
+  return define_static_array(
+      nonstatic_data_members_of(type, std::meta::access_context::current()));
 }
 
 //////////////
@@ -59,9 +60,17 @@ consteval void SplitStruct(SplitOps... ops) {
 // clang-format on
 
 template <typename Original, typename... T> struct PartitionedContainer {
+  static_assert(nsdms(^^Original).size() == (... + nsdms(^^T).size()),
+                "PartitionedContainer: Total number of members in partitions "
+                "must equal number of members in Original");
+
   struct Partitions;
   consteval {
-    define_aggregate(^^Partitions, { data_member_spec(add_pointer(^^T), { .name = identifier_of(nsdms(^^T)[0])})... });
+    define_aggregate(
+        ^^Partitions,
+        {
+            data_member_spec(add_pointer(^^T),
+                             {.name = identifier_of(nsdms(^^T)[0])})...});
   }
 
   Partitions p;
@@ -76,23 +85,64 @@ template <typename Original, typename... T> struct PartitionedContainer {
   }
 
   inline Original operator[](size_t index) const {
-    auto get_arg = [index, this]<std::meta::info Om, typename Out>() constexpr -> Out {
+    auto get_arg = [index,
+                    this]<std::meta::info Om, typename Out>() constexpr -> Out {
       template for (constexpr auto &part : nsdms(^^Partitions)) {
-        template for (constexpr auto &pm : nsdms(remove_pointer(type_of(part)))) {
-          if constexpr(identifier_of(Om) == identifier_of(pm)) {
-            return p.[: part :][index].[: pm :];
+        template for (constexpr auto &pm :
+                      nsdms(remove_pointer(type_of(part)))) {
+          if constexpr (identifier_of(Om) == identifier_of(pm)) {
+            return p.[:part:][index].[:pm:];
           }
         }
       }
     };
 
-    return [: expand_all(nonstatic_data_members_of(^^Original, std::meta::access_context::unchecked())) :] >> [&]<auto... M> {
-      return Original{ get_arg.template operator()<M, typename[: type_of(M) :]>()... };
+    return [:expand_all(nonstatic_data_members_of(
+                 ^^Original, std::meta::access_context::unchecked())
+                        ):] >> [&]<auto... M> {
+      return Original {
+        get_arg.template operator()<M, typename[:type_of(M):]>()...
+      };
     };
   }
 
   size_t size() const { return n; }
-};
 
+  ~PartitionedContainer() {
+    // Deallocate each partition
+    template for (constexpr auto &m : nsdms(^^Partitions)) {
+      using MemType = typename[:remove_pointer(type_of(m)):];
+      std::allocator<MemType>().deallocate(p.[:m:], n);
+    }
+  }
+
+  static std::string get_partitions_string() {
+    auto get_static_array_string = [](std::span<const int> arr, size_t i) {
+      std::string r = "";
+
+      if (i != 0)
+        r += ",";
+
+      r += "[";
+      for (size_t i = 0; i < arr.size(); ++i) {
+        r += std::to_string(arr[i]);
+        if (i != arr.size() - 1) {
+          r += ",";
+        }
+      }
+      r += "]";
+      return r;
+    };
+
+    auto get_splitops_string = [&]<size_t... Is>(std::index_sequence<Is...>) {
+      return (get_static_array_string([:template_arguments_of(^^T)[0]:], Is) +
+              ...);
+    };
+
+    std::string result = "[";
+    result += get_splitops_string(std::make_index_sequence<sizeof...(T)>());
+    return result + "]";
+  }
+};
 
 #endif // STRUCT_TRANSFORMER_H
