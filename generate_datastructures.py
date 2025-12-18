@@ -65,7 +65,7 @@ def convert_codeword_to_partitions(set, codeword):
     return [p for p in partitions if p]
 
 
-def generate_partitions(struct_name_base, members):
+def generate_partitions(members):
     """
     Generates all the ways in which the members can be partitioned into seperate structs.
     Includes all permutations of members within each partition.
@@ -93,9 +93,9 @@ def generate_partitions(struct_name_base, members):
                     if len(p) > 1:
                         for perm in permutations(p):
                             partitions[i] = list(perm)
-                            print(partitions)
+                            yield partitions
             else:
-                print(partitions)
+                yield partitions
 
         while codeword[r] > g[r - 1]:
             r -= 1
@@ -104,7 +104,23 @@ def generate_partitions(struct_name_base, members):
         if codeword[r] > g[r]:
             g[r] = codeword[r]
 
+def generate_partitioned_structs(struct_name_base, members):
+    with open("main.cpp", "r") as f:
+        lines = f.readlines()
+
+    with open("main.cpp", "w") as f:
+        main_start = [i for i, l in enumerate(lines) if "main()" in l][0]
+        f.writelines(lines[: main_start + 1])
+
+        for partition in generate_partitions(members):
+            splitops = []
+            for p in partition:
+                splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in p)}}}).data()>")
+
+            f.write(f"\tRunInvariantMassRandom<PartitionedContainer<{struct_name_base}, {', '.join(splitops)}>>(100);\n")
+
+        f.write("\n\treturn 0;\n}\n")
 
 if __name__ == "__main__":
     generate_subsets(struct_name_base, data_members)
-    generate_partitions(struct_name_base, range(4))
+    generate_partitioned_structs(struct_name_base, range(4))
