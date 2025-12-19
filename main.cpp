@@ -1,9 +1,14 @@
 #include "benchmarks.h"
 #include "datastructures.h"
+
+#include <string>
+#include <experimental/meta>
+#include <iostream>
 #include <algorithm>
+#include <sstream>
+
 #include <chrono>
 #include <fstream>
-#include <iostream>
 #include <likwid.h>
 #include <numeric>
 #include <random>
@@ -12,6 +17,53 @@ using Clock = std::chrono::high_resolution_clock;
 
 size_t max_results_size = 1048576; // 2^20
 
+struct FileOpts {
+  std::string input = "";            // Option "--input <string>"
+  std::string input2 = "";           // Option "--input2 <string>"
+  std::string output = "";           // Option "--output <string>"
+  std::string validation = "";       // Option "--validation <string>"
+};
+
+FileOpts opts;
+std::ostream *output;
+
+/* Parse command-line options. */
+template<typename Opts>
+auto parse_options(std::span<std::string_view const> args) -> Opts {
+  Opts opts;
+
+  constexpr auto ctx = std::meta::access_context::current();
+  template for (constexpr auto dm : define_static_array(nonstatic_data_members_of(^^Opts, ctx))) {
+    auto it = std::find_if(args.begin(), args.end(),
+      [](std::string_view arg){
+        return arg.starts_with("--") && arg.substr(2) == identifier_of(dm);
+      });
+
+    if (it == args.end()) {
+      // no option provided, use default
+      continue;
+    } else if (it + 1 == args.end()) {
+      std::cerr << "Option " << *it << " is missing a value\n";
+      std::exit(EXIT_FAILURE);
+    }
+
+    using T = typename[:type_of(dm):];
+    auto iss = std::stringstream(it[1]);
+    if (iss >> opts.[:dm:]; !iss) {
+      std::cerr << "Failed to parse option " << *it << " into a "
+                << display_string_of(^^T) << '\n';
+      std::exit(EXIT_FAILURE);
+    }
+  }
+
+  if (opts.input2.empty()) {
+    opts.input2 = opts.input;
+  }
+
+  return opts;
+}
+
+/* Read Lorentzvector (pt, eta, phi, e) data from the given CSV file into the container. */
 template <typename Container>
 void ReadData(Container &v, std::string filename) {
   std::ifstream is(filename);
@@ -39,6 +91,8 @@ void ReadData(Container &v, std::string filename) {
       v[i].e = std::stof(token);
     }
     is.close();
+  } else {
+    throw std::runtime_error("Failed to open file " + filename + " for reading");
   }
 }
 
@@ -46,8 +100,8 @@ template <typename Container, std::meta::info BenchmarkFunc,
           typename... ExtraArgs>
 void RunBenchmark(size_t in_size, size_t out_size, ExtraArgs... extra_args) {
   Container v1(in_size), v2(in_size);
-  ReadData(v1, "/data/data-layout-benchmarks/data/500k.csv");
-  ReadData(v2, "/data/data-layout-benchmarks/data/500k.csv");
+  ReadData(v1, opts.input);
+  ReadData(v2, opts.input2);
 
   // Cap the results size to avoid excessive memory usage
   std::vector<double> results(std::min(out_size, max_results_size));
@@ -58,11 +112,12 @@ void RunBenchmark(size_t in_size, size_t out_size, ExtraArgs... extra_args) {
 
   // Print configuration and timing information in csv format
   std::chrono::duration<double, std::milli> elapsed = end - start;
-  std::cout << identifier_of(BenchmarkFunc) << ","
-            << Container::get_partitions_string() << "," << in_size << ","
-            << sizeof(Container) << "," << elapsed.count() << std::endl;
+  *output << identifier_of(BenchmarkFunc) << ","
+          << Container::get_partitions_string() << "," << in_size << ","
+          << sizeof(Container) << "," << elapsed.count() << std::endl;
 }
 
+/* Run all benchmarks defined in benchmarks.h. */
 template <typename Container> void RunAllBenchmarks(size_t n) {
   std::vector<size_t> indices(n);
   std::iota(begin(indices), end(indices), n);
@@ -87,12 +142,22 @@ template <typename T> std::vector<size_t> GetProblemSizes() {
   // Fits in L1 Cache
   sizes.push_back(topo->cacheLevels[0].size / sizeof(T) / 3);
   // Does not fit in any cache
-  sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size * 2 / sizeof(T));
+  sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size * 2 /
+                  sizeof(T));
 
   return sizes;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+  opts = parse_options<FileOpts>(std::vector<std::string_view>(argv+1, argv+argc));
+  std::ofstream output_file(opts.output);
+  if (output_file.is_open()) {
+    output = &output_file;
+  } else {
+    output = &std::cout;
+  }
+  *output << "benchmark,partitions,problem_size,container_byte_size,time_ms\n";
+
   for (size_t n : GetProblemSizes<Particle>()) {
     RunAllBenchmarks<PartitionedContainer<
         ParticleRef, SubParticle<SplitOp({0, 1, 2, 3}).data()>>>(n);
