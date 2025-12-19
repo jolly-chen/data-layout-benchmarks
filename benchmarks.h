@@ -4,7 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
-#include <vector>
+#include <span>
 
 template <typename T>
 inline double ComputeInvariantMass(const T &pt1, const T &eta1, const T &phi1,
@@ -73,25 +73,26 @@ inline double DeltaR2(const T &eta1, const T &phi1, const T &eta2,
 namespace kernels {
 template <typename T>
 inline void InvariantMassSequential(const T &v1, const T &v2,
-                                    std::vector<double> &results) {
-  assert(v1.size() == v2.size() && v1.size() == results.size());
+                                    std::span<double> results) {
+  assert(v1.size() == v2.size());
   const size_t n = v1.size();
 
-  for (size_t i = 0; i < 1; i++) {
-    results[i] = ComputeInvariantMass(v1[i].pt, v1[i].eta, v1[i].phi, v1[i].e,
+  for (size_t i = 0; i < n; i++) {
+    results[i % results.size()] = ComputeInvariantMass(v1[i].pt, v1[i].eta, v1[i].phi, v1[i].e,
                                       v2[i].pt, v2[i].eta, v2[i].phi, v2[i].e);
   }
 }
 
 template <typename T>
 inline void InvariantMassRandom(const T &v1, const T &v2,
-                                std::vector<double> &results) {
+                                std::span<double> results,
+                                std::span<size_t> indices) {
   assert(v1.size() == v2.size());
   const size_t n = v1.size();
 
   for (size_t i = 0; i < n; i++) {
-    size_t idx = rand() % n;
-    results[i] =
+    size_t idx = indices[i];
+    results[i % results.size()] =
         ComputeInvariantMass(v1[idx].pt, v1[idx].eta, v1[idx].phi, v1[idx].e,
                              v2[idx].pt, v2[idx].eta, v2[idx].phi, v2[idx].e);
   }
@@ -99,13 +100,13 @@ inline void InvariantMassRandom(const T &v1, const T &v2,
 
 template <typename T>
 inline void DeltaR2Pairwise(const T &v1, const T &v2,
-                            std::vector<double> &results) {
-  assert(v1.size() == v2.size());
+                            std::span<double> results) {
   const size_t n = v1.size();
 
   for (size_t i = 0; i < n; i++) {
     for (size_t j = 0; j < n; j++) {
-      results[i * n + j] = DeltaR2(v1[i].eta, v1[i].phi, v2[j].eta, v2[j].phi);
+      size_t idx = (i * n + j) % results.size();
+      results[idx] = DeltaR2(v1[i].eta, v1[i].phi, v2[j].eta, v2[j].phi);
     }
   }
 }
