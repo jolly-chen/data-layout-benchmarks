@@ -51,6 +51,10 @@ consteval auto get_member_specs(std::span<const int> indices) {
 }
 
 // clang-format off
+/* Takes a struct In and generate a template specialization of struct Out
+ * for each SplitOp provided, containing only the members of struct In, in the
+ * order specified by the SplitOp.
+ */
 template <typename In, template <auto> typename Out, typename... SplitOps>
 consteval void SplitStruct(SplitOps... ops) {
   (define_aggregate(substitute(^^Out, { std::meta::reflect_constant_array(ops)}),
@@ -59,18 +63,14 @@ consteval void SplitStruct(SplitOps... ops) {
 };
 // clang-format on
 
-template <typename Original, typename... T> struct PartitionedContainer {
-  static_assert(nsdms(^^Original).size() == (... + nsdms(^^T).size()),
+template <typename ProxyRef, typename... T> struct PartitionedContainer {
+  static_assert(nsdms(^^ProxyRef).size() == (... + nsdms(^^T).size()),
                 "PartitionedContainer: Total number of members in partitions "
-                "must equal number of members in Original");
-
+                "must equal number of members in ProxyRef");
   struct Partitions;
   consteval {
-    define_aggregate(
-        ^^Partitions,
-        {
-            data_member_spec(add_pointer(^^T),
-                             {.name = identifier_of(nsdms(^^T)[0])})...});
+    define_aggregate(^^Partitions, { data_member_spec(add_pointer(^^T),
+                                                      {.name = identifier_of(nsdms(^^T)[0])})...});
   }
 
   Partitions p;
@@ -84,13 +84,12 @@ template <typename Original, typename... T> struct PartitionedContainer {
     }
   }
 
-  inline Original operator[](size_t index) const {
-    #pragma clang diagnostic ignored "-Wreturn-type"
+  inline ProxyRef operator[](size_t index) const {
+#pragma clang diagnostic ignored "-Wreturn-type"
     auto get_arg = [index,
                     this]<std::meta::info Om, typename Out>() constexpr -> Out {
       template for (constexpr auto &part : nsdms(^^Partitions)) {
-        template for (constexpr auto &pm :
-                      nsdms(remove_pointer(type_of(part)))) {
+        template for (constexpr auto &pm : nsdms(remove_pointer(type_of(part)))) {
           if constexpr (identifier_of(Om) == identifier_of(pm)) {
             return p.[:part:][index].[:pm:];
           }
@@ -98,11 +97,10 @@ template <typename Original, typename... T> struct PartitionedContainer {
       }
     };
 
-    return [:expand_all(nonstatic_data_members_of(
-                 ^^Original, std::meta::access_context::unchecked())
-                        ):] >> [&]<auto... M> {
-      return Original {
-        get_arg.template operator()<M, typename[:type_of(M):]>()...
+    return [:expand_all(nonstatic_data_members_of(^^ProxyRef, std::meta::access_context::unchecked()) ):] >>
+      [&]<auto... M> {
+        return ProxyRef {
+          get_arg.template operator()<M, typename[:type_of(M):]>()...
       };
     };
   }
@@ -117,7 +115,8 @@ template <typename Original, typename... T> struct PartitionedContainer {
     }
   }
 
-  /* Get a string that contains the partitioning information stored in the parameter pack T. */
+  /* Get a string that contains the partitioning information stored in the
+   * parameter pack T. */
   static std::string get_partitions_string() {
     auto get_static_array_string = [](std::span<const int> arr, size_t i) {
       std::string r = "";
