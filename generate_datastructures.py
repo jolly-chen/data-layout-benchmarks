@@ -19,10 +19,10 @@ data_members = [
 struct_name_base = "Particle"
 
 
-def generate_struct_definition(struct_name, members):
+def generate_struct_definition(struct_name, members, type_modifier=""):
     lines = [f"struct {struct_name} {{"]
     for dtype, name in members:
-        lines.append(f"    {dtype} &{name};")
+        lines.append(f"    {dtype}{type_modifier} {name};")
     lines.append("};")
     return "\n".join(lines)
 
@@ -43,6 +43,7 @@ def generate_subsets(struct_name_base, members):
         f.write('#include "datastructures.h"\n')
         f.write('#include "struct_transformer.h"\n\n')
         f.write(generate_struct_definition(struct_name_base, members) + "\n\n")
+        f.write(generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n")
         f.write(f"template <auto Members> struct Sub{struct_name_base};\n\n")
 
         f.write(
@@ -117,7 +118,7 @@ def generate_partitioned_structs(struct_name_base, members):
             for p in partition:
                 splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in p)}}}).data()>")
 
-            f.write(f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}, {', '.join(splitops)}>>(n);\n")
+            f.write(f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>>(n);\n")
 
         f.write("\t}\t\n\treturn 0;\n}\n")
 
