@@ -11,7 +11,7 @@ find_package(likwid CONFIG REQUIRED)
 link_libraries(likwid::likwid)
 include_directories(${LIKWID_INCLUDE_DIRS}) # if not set in likwid-config.cmake
 
-# add_executable(test test.cpp)
+add_executable(test test.cpp)
 # target_precompile_headers(test PUBLIC datastructures.h) # crashes the compiler?
 
 add_executable(main main.cpp)

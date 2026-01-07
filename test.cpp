@@ -1,4 +1,6 @@
 #include "datastructures.h"
+#include <algorithm>    
+#include <random>
 #include <iostream>
 
 template <typename T> void VectorSum(const T &v1, const T &v2) {
@@ -141,19 +143,32 @@ template <typename T> void VerifyContiguousAllocation0_1_2_3(const T &p) {
 }
 
 int main() {
-  using Container01_23 =
-      PartitionedContainer<Particle, SubParticle<SplitOp({0, 1}).data()>,
-                           SubParticle<SplitOp({2, 3}).data()>>;
-  Container01_23 v1(1000), v2(1000);
+  // using Container01_23 =
+  //     PartitionedContainer<Particle, SubParticle<SplitOp({0, 1}).data()>,
+  //                          SubParticle<SplitOp({2, 3}).data()>>;
+  // Container01_23 v1(1000), v2(1000);
 
-  VectorSum(v1, v2);
-  VerifyContiguousAllocation01_23(v1);
+  // VectorSum(v1, v2);
+  // VerifyContiguousAllocation01_23(v1);
 
-  using Container0_1_2_3 =
-      PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>,
-                           SubParticle<SplitOp({1}).data()>,
-                           SubParticle<SplitOp({2}).data()>,
-                           SubParticle<SplitOp({3}).data()>>;
-  Container0_1_2_3 v3(10);
-  VerifyContiguousAllocation0_1_2_3(v3);
+  // using Container0_1_2_3 =
+  //     PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>,
+  //                          SubParticle<SplitOp({1}).data()>,
+  //                          SubParticle<SplitOp({2}).data()>,
+  //                          SubParticle<SplitOp({3}).data()>>;
+  // Container0_1_2_3 v3(10);
+  // VerifyContiguousAllocation0_1_2_3(v3);
+
+
+    // create and initialize an array                                                                                                   
+    std::vector<size_t> indices(10);
+    std::iota(begin(indices), end(indices), 0);
+    std::mt19937_64 rng(123);
+    std::shuffle(begin(indices), end(indices), rng);
+
+    // copy the contents of the array to output                                                                            
+    for (size_t i = 0; i < indices.size(); ++i) {
+      std::cout << indices[i] << " ";
+    }
+    std::cout << std::endl;
 }
