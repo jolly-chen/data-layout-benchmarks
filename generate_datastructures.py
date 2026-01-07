@@ -8,10 +8,10 @@ import sys
 
 data_members = [
     # ("int", "id"),
-    ("float", "pt"),
-    ("float", "eta"),
-    ("float", "phi"),
-    ("float", "e"),
+    ("double", "pt"),
+    ("double", "eta"),
+    ("double", "phi"),
+    ("double", "e"),
     # ("char", "charge"),
     # ("std::array<std::array<double, 3>, 3>", "posCovMatrix"),
 ]

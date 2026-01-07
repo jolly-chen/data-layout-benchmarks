@@ -4,17 +4,17 @@
 #include "struct_transformer.h"
 
 struct Particle {
-    float pt;
-    float eta;
-    float phi;
-    float e;
+    double pt;
+    double eta;
+    double phi;
+    double e;
 };
 
 struct ParticleRef {
-    float& pt;
-    float& eta;
-    float& phi;
-    float& e;
+    double& pt;
+    double& eta;
+    double& phi;
+    double& e;
 };
 
 template <auto Members> struct SubParticle;
