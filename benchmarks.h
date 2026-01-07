@@ -6,24 +6,50 @@
 #include <iostream>
 #include <span>
 
+
 template <typename T>
 inline double ComputeInvariantMass(const T &pt1, const T &eta1, const T &phi1,
                                    const T &e1, const T &pt2, const T &eta2,
                                    const T &phi2, const T &e2) {
+  const auto etaMax = static_cast<T>(22756.0);
+
   // Conversion from (pt, eta, phi, e) to (x, y, z, mass) coordinate system
   const auto x1 = pt1 * std::cos(phi1);
   const auto y1 = pt1 * std::sin(phi1);
-  const auto z1 = pt1 * std::sinh(eta1);
-  const auto m1_sq = e1 * e1 - (pt1 * pt1 * std::cosh(eta1) * std::cosh(eta1));
+  const auto z1 = pt1 > 0 ? pt1 * std::sinh(eta1) : eta1 == 0 ? 0 : eta1 > 0 ? eta1 - etaMax : eta1 + etaMax;
+  const auto p1 = pt1 > 0 ? pt1 * std::cosh(eta1) : eta1 > etaMax ? eta1 - etaMax : eta1 < -etaMax ? -eta1 - etaMax : 0;
+  const auto m1_sq = e1 * e1 - p1 * p1;
 
   const auto x2 = pt2 * std::cos(phi2);
   const auto y2 = pt2 * std::sin(phi2);
-  const auto z2 = pt2 * std::sinh(eta2);
-  const auto m2_sq = e2 * e2 - (pt2 * pt2 * std::cosh(eta2) * std::cosh(eta2));
+  const auto z2 = pt2 > 0 ? pt2 * std::sinh(eta2) : eta2 == 0 ? 0 : eta2 > 0 ? eta2 - etaMax : eta2 + etaMax;
+  const auto p2 = pt2 > 0 ? pt2 * std::cosh(eta2) : eta2 > etaMax ? eta2 - etaMax : eta2 < -etaMax ? -eta2 - etaMax : 0;
+  const auto m2_sq = e2 * e2 - p2 * p2;
 
   // Numerically stable computation of Invariant Masses
   const auto p1_sq = x1 * x1 + y1 * y1 + z1 * z1;
   const auto p2_sq = x2 * x2 + y2 * y2 + z2 * z2;
+  const auto m1 = m1_sq >= 0 ? std::sqrt(m1_sq) : -std::sqrt(-m1_sq);
+  const auto m2 = m2_sq >= 0 ? std::sqrt(m2_sq) : -std::sqrt(-m2_sq);
+
+  if (p1_sq <= 0 && p2_sq <= 0)
+    return (m1 + m2);
+  if (p1_sq <= 0) {
+      auto mm = m1 + std::sqrt(m2*m2 + p2_sq);
+      auto m2 = mm*mm - p2_sq;
+      if (m2 >= 0)
+        return std::sqrt(m2);
+      else
+        return std::sqrt(-m2);
+  }
+  if (p2_sq <= 0) {
+      auto mm = m2 + std::sqrt(m1*m1 + p1_sq);
+      auto m2 = mm*mm - p1_sq;
+      if (m2 >= 0)
+        return std::sqrt(m2);
+      else
+        return std::sqrt(-m2);
+  }
 
   const auto r1 = m1_sq / p1_sq;
   const auto r2 = m2_sq / p2_sq;
@@ -54,20 +80,20 @@ inline double ComputeInvariantMass(const T &pt1, const T &eta1, const T &phi1,
   return std::sqrt(m1_sq + m2_sq + y * z);
 }
 
+  //  const auto dphi = DeltaPhi(phi1, phi2, c);
+  //  return (eta1 - eta2) * (eta1 - eta2) + dphi * dphi;
 template <typename T>
 inline double DeltaR2(const T &eta1, const T &phi1, const T &eta2,
                       const T &phi2) {
-
   const auto deta = eta1 - eta2;
-  const auto dphi = phi1 - phi2;
-  const auto r = std::fmod(dphi + M_PI, 2 * M_PI);
+  auto r = std::fmod(phi2 - phi1, 2.0 * M_PI);
   if (r < -M_PI) {
-    return deta * deta + (r + 2 * M_PI) * (r + 2 * M_PI);
+    r += 2.0 * M_PI;
   } else if (r > M_PI) {
-    return deta * deta + (r - 2 * M_PI) * (r - 2 * M_PI);
-  } else {
-    return deta * deta + r * r;
+    r -= 2.0 * M_PI;
   }
+
+  return deta * deta + r * r;
 }
 
 namespace kernels {
