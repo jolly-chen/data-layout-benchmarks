@@ -108,9 +108,28 @@ def parse_args(args):
         default=int(1048576),
         help="Maximum size of results (default: 1048576)",
     )
-    gen_validation.add_argument("--DeltaR2Pairwise", nargs=2)
-    gen_validation.add_argument("--InvariantMassSequential", nargs=2)
-    gen_validation.add_argument("--InvariantMassRandom", nargs=2)
+    gen_validation.add_argument(
+        "-i", "--input1", type=str, help="Input dataset file", required=True
+    )
+    gen_validation.add_argument(
+        "-i2",
+        "--input2",
+        type=str,
+        help="Pass second input dataset file if different from the first",
+        required=False,
+    )
+    gen_validation.add_argument(
+        "-b",
+        "--benchmark",
+        nargs="+",
+        choices=[
+            "DeltaR2Pairwise",
+            "InvariantMassSequential",
+            "InvariantMassRandom",
+        ],
+        help="Benchmark to generate validation for (DeltaR2Pairwise, InvariantMassSequential, InvariantMassRandom)",
+        required=True,
+    )
 
     return parser.parse_args(args)
 
@@ -122,16 +141,8 @@ if __name__ == "__main__":
         generate_dataset(args)
     elif args.mode == "validation":
         if args.DeltaR2Pairwise:
-            input1 = args.DeltaR2Pairwise[0]
-            input2 = args.DeltaR2Pairwise[1]
-            generate_DeltaR2Pairwise_validation(input1, input2, args.max_results_size)
+            generate_DeltaR2Pairwise_validation(args.input, args.input2, args.max_results_size)
         elif args.InvariantMassSequential:
-            input1 = args.InvariantMassSequential[0]
-            input2 = args.InvariantMassSequential[1]
-            generate_InvariantMassSequential_validation(
-                input1, input2, args.max_results_size
-            )
+            generate_InvariantMassSequential_validation(args.input, args.input2, args.max_results_size)
         elif args.InvariantMassRandom:
-            input1 = args.InvariantMassRandom[0]
-            input2 = args.InvariantMassRandom[1]
-            # generate_InvariantMassRandom_validation(input1, input2, args.max_results_size)
+            # generate_InvariantMassRandom_validation(args.input, args.input2, args.max_results_size)
