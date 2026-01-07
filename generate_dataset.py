@@ -1,3 +1,4 @@
+import os
 import sys
 import argparse
 import scipy.stats
@@ -6,8 +7,6 @@ import ROOT
 
 from pathlib import Path
 from itertools import product
-
-ROOT.EnableImplicitMT()
 
 def generate_random_vectors(ngen, seed):
     np.random.seed(seed)
@@ -37,7 +36,7 @@ def generate_dataset(args):
 
 
 def generate_InvariantMassSequential_validation(input1, input2, max_results_size):
-    out_file = f"{Path(input1).stem}_{Path(input2).stem}_{max_results_size}_InvariantMassSequential.validation"
+    out_file = f"{os.path.dirname(input1)}/{Path(input1).stem}_{Path(input2).stem}_{max_results_size}_InvariantMassSequential.validation"
     print(
         f"Generating InvariantMassSequential validation for {input1} and {input2} in {out_file}"
     )
@@ -49,6 +48,7 @@ def generate_InvariantMassSequential_validation(input1, input2, max_results_size
         lines2 = dataset2_file.readlines()[-max_results_size:]
         pepe_2 = [ROOT.Math.PtEtaPhiEVector(*map(np.double, line.strip().split(","))) for line in lines2]
         pepe_1 = [ROOT.Math.PtEtaPhiEVector(*map(np.double, line.strip().split(","))) for line in lines1]
+
         px1 = ROOT.RVec["double"]([v.Px() for v in pepe_1])
         py1 = ROOT.RVec["double"]([v.Py() for v in pepe_1])
         pz1 = ROOT.RVec["double"]([v.Pz() for v in pepe_1])
@@ -56,13 +56,14 @@ def generate_InvariantMassSequential_validation(input1, input2, max_results_size
         px2 = ROOT.RVec["double"]([w.Px() for w in pepe_2])
         py2 = ROOT.RVec["double"]([w.Py() for w in pepe_2])
         pz2 = ROOT.RVec["double"]([w.Pz() for w in pepe_2])
-        m2 = ROOT.RVec["double"]([w.M() for w in pepe_2])    
-        
-        validation_file.write("\n".join([str(im) for im in ROOT.VecOps.InvariantMasses_PxPyPzM["double"](px1, py1, pz1, m1, px2, py2, pz2, m2)]))
+        m2 = ROOT.RVec["double"]([w.M() for w in pepe_2])
 
+        im = ROOT.VecOps.InvariantMasses_PxPyPzM["double"](px1, py1, pz1, m1, px2, py2, pz2, m2)
+        for s in im:
+            validation_file.write(f"{s}\n")
 
 def generate_DeltaR2Pairwise_validation(input1, input2, max_results_size):
-    out_file = f"{Path(input1).stem}_{Path(input2).stem}_{max_results_size}_DeltaR2Pairwise.validation"
+    out_file = f"{os.path.dirname(input1)}/{Path(input1).stem}_{Path(input2).stem}_{max_results_size}_DeltaR2Pairwise.validation"
     print(
         f"Generating DeltaR2Pairwise validation for {input1} and {input2} in {out_file}"
     )
@@ -70,23 +71,23 @@ def generate_DeltaR2Pairwise_validation(input1, input2, max_results_size):
         out_file, "w"
     ) as validation_file:
         lines1 = np.array([list(map(np.double, line1.strip().split(","))) for line1 in dataset1_file.readlines()])
-        lines2 = np.array([list(map(float, line1.strip().split(","))) for line1 in dataset2_file.readlines()])
+        lines2 = np.array([list(map(np.double, line1.strip().split(","))) for line1 in dataset2_file.readlines()])
         n_pairs = len(lines1) * len(lines2)
-                
-        # Only the last max_results_size pairwise combinations are relevant. 
+
+        # Only the last max_results_size pairwise combinations are relevant.
         # Reverse the input arrays so the last combinations are generated first.
-        # Need to use a list comprehension over the product generator to avoid 
+        # Need to use a list comprehension over the product generator to avoid
         # creating the full cartesian product in memory which can be very large.
-        combinations = np.array([p for p,i in zip(product(lines1[::-1], lines2[::-1]), range(n_pairs)) if i < max_results_size])
+        combinations = np.array([p for p, i in zip(product(lines1[::-1], lines2[::-1]), range(n_pairs)) if i < max_results_size])[::-1]
         eta1 = ROOT.VecOps.AsRVec(combinations[:, 0, 1].copy())
         phi1 = ROOT.VecOps.AsRVec(combinations[:, 0, 2].copy())
         eta2 = ROOT.VecOps.AsRVec(combinations[:, 1, 1].copy())
         phi2 = ROOT.VecOps.AsRVec(combinations[:, 1, 2].copy())
-                
-        validation_file.write(
-            '\n'.join([str(dr2) for dr2 in ROOT.VecOps.DeltaR2["double"](phi1, eta1, phi2, eta2)])
-        )      
-        
+
+        dr2 = ROOT.VecOps.DeltaR2["double"](eta1, eta2, phi1, phi2)
+        for d in dr2:
+            validation_file.write(f"{d}\n")
+
 
 def parse_args(args):
     parser = argparse.ArgumentParser(
