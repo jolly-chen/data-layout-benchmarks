@@ -1,4 +1,6 @@
 #include "datastructures.h"
+#include <algorithm>
+#include <random>
 #include <iostream>
 
 template <typename T> void VectorSum(const T &v1, const T &v2) {
@@ -34,8 +36,8 @@ template <typename T> void VectorSum(const T &v1, const T &v2) {
   std::cout << "PASSED\n";
 }
 
-template <typename T> void VerifyContiguousAllocation01_23(const T &p) {
-  std::cout << "Running VerifyContiguousAllocation01_23... ";
+template <typename T> void VerifyContiguousAllocation_pteta_phie(const T &p) {
+  std::cout << "Running VerifyContiguousAllocation_pteta_phie... ";
 
   // Test that pt-eta and phi-e elements are allocated contiguously
   size_t n = p.size();
@@ -86,8 +88,8 @@ template <typename T> void VerifyContiguousAllocation01_23(const T &p) {
   std::cout << "PASSED\n";
 }
 
-template <typename T> void VerifyContiguousAllocation0_1_2_3(const T &p) {
-  std::cout << "Running VerifyContiguousAllocation0_1_2_3... ";
+template <typename T> void VerifyContiguousAllocation_pt_eta_phi_e(const T &p) {
+  std::cout << "Running VerifyContiguousAllocation_pt_eta_phi_e... ";
 
   // Test that elements for each member are allocated contiguously
   size_t n = p.size();
@@ -141,10 +143,10 @@ template <typename T> void VerifyContiguousAllocation0_1_2_3(const T &p) {
 }
 
 int main() {
-  using Container01_23 =
-      PartitionedContainer<Particle, SubParticle<SplitOp({0, 1}).data()>,
-                           SubParticle<SplitOp({2, 3}).data()>>;
-  Container01_23 v1(1000), v2(1000);
+  // using Container01_23 =
+  //     PartitionedContainer<Particle, SubParticle<SplitOp({0, 1}).data()>,
+  //                          SubParticle<SplitOp({2, 3}).data()>>;
+  // Container01_23 v1(1000), v2(1000);
 
   VectorSum(v1, v2);
   VerifyContiguousAllocation01_23(v1);
