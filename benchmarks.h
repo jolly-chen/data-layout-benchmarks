@@ -6,6 +6,7 @@
 #include <iostream>
 #include <span>
 
+
 template <typename T>
 inline double ComputeInvariantMass(const T &pt1, const T &eta1, const T &phi1,
                                    const T &e1, const T &pt2, const T &eta2,
@@ -79,20 +80,20 @@ inline double ComputeInvariantMass(const T &pt1, const T &eta1, const T &phi1,
   return std::sqrt(m1_sq + m2_sq + y * z);
 }
 
+  //  const auto dphi = DeltaPhi(phi1, phi2, c);
+  //  return (eta1 - eta2) * (eta1 - eta2) + dphi * dphi;
 template <typename T>
 inline double DeltaR2(const T &eta1, const T &phi1, const T &eta2,
                       const T &phi2) {
-
   const auto deta = eta1 - eta2;
-  const auto dphi = phi1 - phi2;
-  const auto r = std::fmod(dphi + M_PI, 2 * M_PI);
+  auto r = std::fmod(phi2 - phi1, 2.0 * M_PI);
   if (r < -M_PI) {
-    return deta * deta + (r + 2 * M_PI) * (r + 2 * M_PI);
+    r += 2.0 * M_PI;
   } else if (r > M_PI) {
-    return deta * deta + (r - 2 * M_PI) * (r - 2 * M_PI);
-  } else {
-    return deta * deta + r * r;
+    r -= 2.0 * M_PI;
   }
+
+  return deta * deta + r * r;
 }
 
 namespace kernels {
