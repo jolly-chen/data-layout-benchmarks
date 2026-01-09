@@ -7,13 +7,13 @@ import os
 import sys
 
 data_members = [
-    # ("int", "id"),
+    ("int", "id"),
     ("double", "pt"),
     ("double", "eta"),
     ("double", "phi"),
     ("double", "e"),
-    # ("char", "charge"),
-    # ("std::array<std::array<double, 3>, 3>", "posCovMatrix"),
+    ("char", "charge"),
+    ("std::array<std::array<double, 3>, 3>", "posCovMatrix"),
 ]
 
 struct_name_base = "Particle"
@@ -113,14 +113,22 @@ def generate_partitioned_structs(struct_name_base, members):
         main_start = [i for i, l in enumerate(lines) if "GetProblemSizes" in l][1]
         f.writelines(lines[: main_start + 1])
 
-        for partition in generate_partitions(members):
+        f.write(f"\tconstexpr std::array containers = {{\n")
+        partitions = generate_partitions(members)
+        for i, p in enumerate(partitions):
             splitops = []
             for p in partition:
                 splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in p)}}}).data()>")
 
             f.write(f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>>(n);\n")
 
-        f.write("\t}\t\n\treturn 0;\n}\n")
+            if i != 0: f.write(f",\n")
+            f.write(f"\t\t^^PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>")
+
+        f.write(f"\n\t}};\n\n")
+        f.write("  RunAllBenchmarks<containers>(problem_sizes, alignment);\n")
+        f.write("\t\n\treturn 0;\n}\n")
+        f.write(f"// END GENERATED CODE\n")
 
 if __name__ == "__main__":
     generate_subsets(struct_name_base, data_members)
