@@ -110,17 +110,16 @@ def generate_partitioned_structs(struct_name_base, members):
         lines = f.readlines()
 
     with open("main.cpp", "w") as f:
-        main_start = [i for i, l in enumerate(lines) if "GetProblemSizes" in l][1]
+        main_start = [i for i, l in enumerate(lines) if "THIS IS GENERATED USING generate_datastructures.py" in l][0]
         f.writelines(lines[: main_start + 1])
 
         f.write(f"\tconstexpr std::array containers = {{\n")
         partitions = generate_partitions(members)
         for i, p in enumerate(partitions):
             splitops = []
-            for p in partition:
-                splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in p)}}}).data()>")
 
-            f.write(f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>>(n);\n")
+            for op in p:
+                splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in op)}}}).data()>")
 
             if i != 0: f.write(f",\n")
             f.write(f"\t\t^^PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>")

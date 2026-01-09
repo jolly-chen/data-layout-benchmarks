@@ -145,11 +145,11 @@ void ReadData(Container &v, std::string filename) {
 
 template <typename Container, std::meta::info BenchmarkFunc,
           typename... ExtraArgs>
-void RunBenchmark(size_t in_size, size_t out_size, ExtraArgs... extra_args) {
+void RunBenchmark(size_t in_size, size_t alignment, size_t out_size, ExtraArgs... extra_args) {
   std::vector<double> measured_times;
 
   for (int _ = 0; _ < opts.repetitions; ++_) {
-    Container v1(in_size), v2(in_size);
+    Container v1(in_size, alignment), v2(in_size, alignment);
     ReadData(v1, opts.input);
     ReadData(v2, opts.input2);
 
@@ -224,17 +224,6 @@ void RunAllBenchmarks(const std::vector<size_t> &problem_sizes, const size_t ali
       RunBenchmark<typename[: c :], ^^kernels::DeltaR2Pairwise>(n, alignment, n * n);
     }
   }
-
-  CpuTopology_t topo = get_cpuTopology();
-
-  // Fits in L1 Cache
-  sizes.push_back(topo->cacheLevels[0].size / sizeof(T) / 3);
-  // Does not fit in any cache
-  sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size / sizeof(T));
-
-//   sizes.push_back(10);
-
-  return sizes;
 }
 
 int main(int argc, char *argv[]) {
@@ -246,6 +235,8 @@ int main(int argc, char *argv[]) {
   } else {
     output = &std::cout;
   }
+
+  // Header for CSV output
   *output << "benchmark,partitions,problem_size,container_byte_size,time_ratio,"
              "min,max,"
              "avg,stddev\n";
@@ -24929,3 +24920,4 @@ int main(int argc, char *argv[]) {
 
 	return 0;
 }
+// END GENERATED CODE
