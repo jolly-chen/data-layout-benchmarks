@@ -1,7 +1,7 @@
-#include "datastructures.h"
+#include "struct_transformer.h"
 #include <algorithm>
-#include <random>
 #include <iostream>
+#include <random>
 
 template <typename T> void VectorSum(const T &v1, const T &v2) {
   std::cout << "Running VectorSum test... ";
@@ -12,150 +12,195 @@ template <typename T> void VectorSum(const T &v1, const T &v2) {
 
   // Initialize vectors
   for (size_t i = 0; i < n; i++) {
-    v1[i].pt = i;
-    v1[i].phi = i;
-    v2[i].pt = i;
-    v2[i].phi = i;
+    v1[i].x = i;
+    v1[i].y = i;
+    v2[i].x = i;
+    v2[i].y = i;
   }
 
-  // Sum pt and phi members
+  // Sum x and y members
   for (size_t i = 0; i < n; i++) {
-    results[i] = v1[i].pt + v1[i].phi + v2[i].pt + v2[i].phi;
+    results[i] = v1[i].x + v1[i].y + v2[i].x + v2[i].y;
   }
 
   // Verify results
   for (size_t i = 0; i < n; i++) {
     if (results[i] != i * 4) {
-      std::cout << "FAILED\n";
-      std::cerr << "Error at index " << i << ": expected " << i * 4 << ", got "
-                << results[i] << "\n";
+      std::cout << "\033[1;31mFAILED\033[0m\n";
+      std::cerr << "\tError at index " << i << ": expected " << i * 4
+                << ", got " << results[i] << "\n";
       return;
     }
   }
 
-  std::cout << "PASSED\n";
+  std::cout << "\033[1;32mPASSED\033[0m\n";
 }
 
-template <typename T> void VerifyContiguousAllocation_pteta_phie(const T &p) {
-  std::cout << "Running VerifyContiguousAllocation_pteta_phie... ";
+template <typename T> void VerifyContiguousAllocation01_23(const T &p) {
+  std::cout << "Running VerifyContiguousAllocation01_23... ";
 
-  // Test that pt-eta and phi-e elements are allocated contiguously
+  // Test that x-y and z-w elements are allocated contiguously (i.e., xyx and
+  // zwz)
   size_t n = p.size();
-  size_t pt0_eta0_diff = reinterpret_cast<char *>(&(p[0].eta)) -
-                         reinterpret_cast<char *>(&(p[0].pt));
-  size_t eta0_pt1_diff = reinterpret_cast<char *>(&(p[1].pt)) -
-                         reinterpret_cast<char *>(&(p[0].eta));
-  size_t phi0_e0_diff = reinterpret_cast<char *>(&(p[0].e)) -
-                        reinterpret_cast<char *>(&(p[0].phi));
-  size_t e0_phi1_diff = reinterpret_cast<char *>(&(p[1].phi)) -
-                        reinterpret_cast<char *>(&(p[0].e));
+  size_t x0_y0_diff =
+      reinterpret_cast<char *>(&(p[0].y)) - reinterpret_cast<char *>(&(p[0].x));
+  size_t y0_x1_diff =
+      reinterpret_cast<char *>(&(p[1].x)) - reinterpret_cast<char *>(&(p[0].y));
+  size_t z0_w0_diff =
+      reinterpret_cast<char *>(&(p[0].w)) - reinterpret_cast<char *>(&(p[0].z));
+  size_t w0_z1_diff =
+      reinterpret_cast<char *>(&(p[1].z)) - reinterpret_cast<char *>(&(p[0].w));
 
-  if (pt0_eta0_diff != sizeof(float)) {
-    std::cout << "FAILED\n";
+  if (x0_y0_diff != sizeof(double)) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
     std::cerr
-        << "Non-contiguous allocation detected between pt[0] and eta[0]\n";
+        << "\tNon-contiguous allocation detected between x[0] and y[0]: gap of "
+        << x0_y0_diff << "\n";
     return;
   }
 
-  if (eta0_pt1_diff != sizeof(float)) {
-    std::cout << "FAILED\n";
+  if (y0_x1_diff != sizeof(double)) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
     std::cerr
-        << "Non-contiguous allocation detected between eta[0] and pt[1]\n";
+        << "\tNon-contiguous allocation detected between y[0] and x[1]: gap of "
+        << y0_x1_diff << "\n";
     return;
   }
 
-  if (phi0_e0_diff != sizeof(float)) {
-    std::cout << "FAILED\n";
-    std::cerr << "Non-contiguous allocation detected between phi[0] and e[0]\n";
+  if (z0_w0_diff != sizeof(float)) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
+    std::cerr
+        << "\tNon-contiguous allocation detected between z[0] and w[0]: gap of "
+        << z0_w0_diff << "\n";
     return;
   }
 
-  if (e0_phi1_diff != sizeof(float)) {
-    std::cout << "FAILED\n";
-    std::cerr << "Non-contiguous allocation detected between e[0] and phi[1]\n";
+  if (w0_z1_diff != sizeof(float)) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
+    std::cerr
+        << "\tNon-contiguous allocation detected between w[0] and z[1]: gap of "
+        << w0_z1_diff << "\n";
     return;
   }
 
-  // Test that the different members are allocated contiguously
-  auto pt_start = reinterpret_cast<char *>(&p[0].pt);
-  auto phi_start = reinterpret_cast<char *>(&p[0].phi);
-  if (phi_start != pt_start + 2 * n * sizeof(float)) {
-    std::cout << "FAILED\n";
-    std::cerr << "Members are not allocated contiguously\n";
+  // Test that the different members are allocated contiguously (i.e.,
+  // xyxyxy...zwzwzw...)
+  auto last_y = reinterpret_cast<char *>(&p[n - 1].y) + sizeof(p[n - 1].y);
+  auto first_z = reinterpret_cast<char *>(&p[0].z);
+  if (last_y != first_z) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
+    std::cerr << "\tMembers are not allocated contiguously: end of first "
+                 "partition is "
+              << last_y << " and the start of second partition is " << first_z
+              << "\n";
     return;
   }
 
-  std::cout << "PASSED\n";
+  std::cout << "\033[1;32mPASSED\033[0m\n";
 }
 
-template <typename T> void VerifyContiguousAllocation_pt_eta_phi_e(const T &p) {
-  std::cout << "Running VerifyContiguousAllocation_pt_eta_phi_e... ";
+template <typename T> void VerifyContiguousAllocation0_1_2_3(const T &p) {
+  std::cout << "Running VerifyContiguousAllocation0_1_2_3... ";
+  bool failed = false;
 
-  // Test that elements for each member are allocated contiguously
+  // Test that elements for each member are allocated contiguously (i.e., xx and
+  // yy and zz and ww)
+  size_t x_diff =
+      reinterpret_cast<char *>(&(p[1].x)) - reinterpret_cast<char *>(&(p[0].x));
+  size_t y_diff =
+      reinterpret_cast<char *>(&(p[1].y)) - reinterpret_cast<char *>(&(p[0].y));
+  size_t z_diff =
+      reinterpret_cast<char *>(&(p[1].z)) - reinterpret_cast<char *>(&(p[0].z));
+  size_t w_diff =
+      reinterpret_cast<char *>(&(p[1].w)) - reinterpret_cast<char *>(&(p[0].w));
+
+  if (x_diff != sizeof(int)) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
+    std::cerr << "\tElements of x are not contiguous: gap of " << x_diff
+              << "\n";
+    failed = true;
+  }
+
+  if (y_diff != sizeof(double)) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
+    std::cerr << "\tElements of y are not contiguous: gap of " << y_diff
+              << "\n";
+    failed = true;
+  }
+
+  if (z_diff != sizeof(float)) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
+    std::cerr << "\tElements of z are not contiguous: gap of " << z_diff
+              << "\n";
+    failed = true;
+  }
+
+  if (w_diff != sizeof(char)) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
+    std::cerr << "\tElements of w are not contiguous: gap of " << w_diff
+              << "\n";
+    failed = true;
+  }
+
+  // Test that the different members are allocated contiguously (i.e., xxxx...yyyy...zzzz...wwww...)
   size_t n = p.size();
-  size_t pt_diff = reinterpret_cast<char *>(&(p[1].pt)) -
-                   reinterpret_cast<char *>(&(p[0].pt));
-  size_t eta_diff = reinterpret_cast<char *>(&(p[1].eta)) -
-                    reinterpret_cast<char *>(&(p[0].eta));
-  size_t phi_diff = reinterpret_cast<char *>(&(p[1].phi)) -
-                    reinterpret_cast<char *>(&(p[0].phi));
-  size_t e_diff =
-      reinterpret_cast<char *>(&(p[1].e)) - reinterpret_cast<char *>(&(p[0].e));
-
-  if (pt_diff != sizeof(float)) {
-    std::cout << "FAILED\n";
-    std::cerr << "Elements of pt are not contiguous\n";
-    return;
+  auto x_end = reinterpret_cast<char *>(&p[0].x) + align_size(n *sizeof(int), 64);
+  auto y_start = reinterpret_cast<char *>(&p[0].y);
+  auto y_end = y_start + align_size(n * sizeof(double), 64);
+  auto z_start = reinterpret_cast<char *>(&p[0].z);
+  auto z_end = z_start + align_size(n * sizeof(float), 64);
+  auto w_start = reinterpret_cast<char *>(&p[0].w);
+  if (y_start != x_end || z_start != y_end || w_start != z_end) {
+    std::cout << "\033[1;31mFAILED\033[0m\n";
+    std::cerr << "\tMembers are not allocated contiguously. Partition boundaries are:\n"
+              << "\t\tx: [" << (long long) reinterpret_cast<char *>(&p[0].x) << ", " << (long long) x_end << "]\n"
+              << "\t\ty: [" << (long long) y_start << ", " << (long long) y_end << "]\n"
+              << "\t\tz: [" << (long long) z_start << ", " << (long long) z_end << "]\n"
+              << "\t\tw: [" << (long long) w_start << ", " << (long long) (w_start + align_size(n * sizeof(char), 64)) << "]\n";
+    failed = true;
   }
 
-  if (eta_diff != sizeof(float)) {
-    std::cout << "FAILED\n";
-    std::cerr << "Elements of eta are not contiguous\n";
-    return;
+  if (!failed) {
+    std::cout << "\033[1;32mPASSED\033[0m\n";
   }
-
-  if (phi_diff != sizeof(float)) {
-    std::cout << "FAILED\n";
-    std::cerr << "Elements of phi are not contiguous\n";
-    return;
-  }
-
-  if (e_diff != sizeof(float)) {
-    std::cout << "FAILED\n";
-    std::cerr << "Elements of e are not contiguous\n";
-    return;
-  }
-
-  // Test that the different members are allocated contiguously
-  auto pt_start = reinterpret_cast<char *>(&p[0].pt);
-  auto eta_start = reinterpret_cast<char *>(&p[0].eta);
-  auto phi_start = reinterpret_cast<char *>(&p[0].phi);
-  auto e_start = reinterpret_cast<char *>(&p[0].e);
-  if (eta_start != pt_start + n * sizeof(float) ||
-      phi_start != eta_start + n * sizeof(float) ||
-      e_start != phi_start + n * sizeof(float)) {
-    std::cout << "FAILED\n";
-    std::cerr << "Members are not allocated contiguously\n";
-    return;
-  }
-
-  std::cout << "PASSED\n";
 }
+
+struct SRef {
+  int &x;
+  double &y;
+  float &z;
+  char &w;
+};
+
+struct S {
+  int x;
+  double y;
+  float z;
+  char w;
+};
+
+template <auto Members> struct SubStruct;
+
+consteval { SplitStruct<S, SubStruct>(SplitOp({0, 1}), SplitOp({2, 3})); }
+consteval {
+  SplitStruct<S, SubStruct>(SplitOp({0}), SplitOp({1}), SplitOp({2}),
+                            SplitOp({3}));
+}
+
+constexpr size_t alignment = 64;
 
 int main() {
-  // using Container01_23 =
-  //     PartitionedContainer<Particle, SubParticle<SplitOp({0, 1}).data()>,
-  //                          SubParticle<SplitOp({2, 3}).data()>>;
-  // Container01_23 v1(1000), v2(1000);
+  using Container01_23 =
+      PartitionedContainer<SRef, SubStruct<SplitOp({0, 1}).data()>,
+                           SubStruct<SplitOp({2, 3}).data()>>;
+  Container01_23 v1(1000, alignment), v2(1000, alignment);
 
   VectorSum(v1, v2);
   VerifyContiguousAllocation01_23(v1);
 
-  using Container0_1_2_3 =
-      PartitionedContainer<Particle, SubParticle<SplitOp({0}).data()>,
-                           SubParticle<SplitOp({1}).data()>,
-                           SubParticle<SplitOp({2}).data()>,
-                           SubParticle<SplitOp({3}).data()>>;
-  Container0_1_2_3 v3(10);
+  using Container0_1_2_3 = PartitionedContainer<
+      SRef, SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
+      SubStruct<SplitOp({2}).data()>, SubStruct<SplitOp({3}).data()>>;
+  Container0_1_2_3 v3(1000, alignment);
   VerifyContiguousAllocation0_1_2_3(v3);
 }
