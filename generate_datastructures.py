@@ -53,7 +53,6 @@ def generate_subsets(struct_name_base, members):
             f.write(
                 f"consteval {{ SplitStruct<{struct_name_base}, Sub{struct_name_base}>(SplitOp({{{', '.join(str(i) for i in subset)}}})); }}\n"
             )
-        f.write("\n#endif // DATASTRUCTURES_H\n")
 
 
 def convert_codeword_to_partitions(set, codeword):
@@ -88,15 +87,17 @@ def generate_partitions(members):
 
         for j in range(1, g[n1] + 2):
             codeword[n] = j
-            partitions = convert_codeword_to_partitions(members, codeword[1:])
-            if any(len(p) > 1 for p in partitions):
-                for i, p in enumerate(partitions):
-                    if len(p) > 1:
-                        for perm in permutations(p):
-                            partitions[i] = list(perm)
-                            yield partitions
-            else:
-                yield partitions
+            partition = convert_codeword_to_partitions(members, codeword[1:])
+            for partition_perm in permutations(partition):
+                partition_perm = list(partition_perm)
+                if any(len(p) > 1 for p in partition_perm):
+                    for i, p in enumerate(partition_perm):
+                        if len(p) > 1:
+                            for subset_perm in permutations(p):
+                                partition_perm[i] = list(subset_perm)
+                                yield partition_perm
+                else:
+                    yield partition_perm
 
         while codeword[r] > g[r - 1]:
             r -= 1
@@ -106,14 +107,8 @@ def generate_partitions(members):
             g[r] = codeword[r]
 
 def generate_partitioned_structs(struct_name_base, members):
-    with open("main.cpp", "r") as f:
-        lines = f.readlines()
-
-    with open("main.cpp", "w") as f:
-        main_start = [i for i, l in enumerate(lines) if "THIS IS GENERATED USING generate_datastructures.py" in l][0]
-        f.writelines(lines[: main_start + 1])
-
-        f.write(f"\tconstexpr std::array containers = {{\n")
+    with open("datastructures.h", "a") as f:
+        f.write(f"\nconstexpr std::array containers = {{\n")
         partitions = generate_partitions(members)
         for i, p in enumerate(partitions):
             splitops = []
@@ -122,12 +117,10 @@ def generate_partitioned_structs(struct_name_base, members):
                 splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in op)}}}).data()>")
 
             if i != 0: f.write(f",\n")
-            f.write(f"\t\t^^PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>")
+            f.write(f"\t^^PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>")
 
-        f.write(f"\n\t}};\n\n")
-        f.write("  RunAllBenchmarks<containers>(problem_sizes, alignment);\n")
-        f.write("\t\n\treturn 0;\n}\n")
-        f.write(f"// END GENERATED CODE\n")
+        f.write(f"\n}};\n\n")
+        f.write("\n#endif // DATASTRUCTURES_H\n")
 
 if __name__ == "__main__":
     generate_subsets(struct_name_base, data_members)
