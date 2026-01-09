@@ -113,7 +113,7 @@ def generate_partitioned_structs(struct_name_base, members):
         main_start = [i for i, l in enumerate(lines) if "THIS IS GENERATED USING generate_datastructures.py" in l][0]
         f.writelines(lines[: main_start + 1])
 
-        f.write(f"\tRunAllBenchmarks<")
+        f.write(f"\tconstexpr std::array containers = {{\n")
         partitions = generate_partitions(members)
         for i, p in enumerate(partitions):
             splitops = []
@@ -121,10 +121,11 @@ def generate_partitioned_structs(struct_name_base, members):
             for op in p:
                 splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in op)}}}).data()>")
 
-            if i != 0: f.write(f",\n                   ")
-            f.write(f"PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>")
+            if i != 0: f.write(f",\n")
+            f.write(f"\t\t^^PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>")
 
-        f.write(f">(problem_sizes, alignment);\n")
+        f.write(f"\n\t}};\n\n")
+        f.write("  RunAllBenchmarks<containers>(problem_sizes, alignment);\n")
         f.write("\t\n\treturn 0;\n}\n")
         f.write(f"// END GENERATED CODE\n")
 
