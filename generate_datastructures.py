@@ -54,6 +54,8 @@ def generate_subsets(struct_name_base, members):
                 f"consteval {{ SplitStruct<{struct_name_base}, Sub{struct_name_base}>(SplitOp({{{', '.join(str(i) for i in subset)}}})); }}\n"
             )
 
+        f.write("\n#endif // DATASTRUCTURES_H\n")
+
 
 def convert_codeword_to_partitions(set, codeword):
     """
