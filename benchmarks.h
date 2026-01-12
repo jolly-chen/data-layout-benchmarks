@@ -126,13 +126,13 @@ inline void InvariantMassRandom(const T &v1, const T &v2,
 
 template <typename T>
 inline void DeltaR2Pairwise(const T &v1, const T &v2,
-                            std::span<double> results) {
+                            std::span<double> results,  std::span<size_t> v2_indices) {
   const size_t n = v1.size();
 
   for (size_t i = 0; i < n; i++) {
-    for (size_t j = 0; j < n; j++) {
-      size_t idx = (i * n + j) % results.size();
-      results[idx] = DeltaR2(v1[i].eta, v1[i].phi, v2[j].eta, v2[j].phi);
+    for (size_t v2_idx : v2_indices) {
+      size_t result_idx = (i * n + v2_idx) % results.size();
+      results[result_idx] = DeltaR2(v1[i].eta, v1[i].phi, v2[v2_idx].eta, v2[v2_idx].phi);
     }
   }
 }
