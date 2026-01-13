@@ -142,9 +142,11 @@ template <typename T> void VerifyContiguousAllocation0_1_2_3(const T &p) {
     failed = true;
   }
 
-  // Test that the different members are allocated contiguously (i.e., xxxx...yyyy...zzzz...wwww...)
+  // Test that the different members are allocated contiguously (i.e.,
+  // xxxx...yyyy...zzzz...wwww...)
   size_t n = p.size();
-  auto x_end = reinterpret_cast<char *>(&p[0].x) + align_size(n *sizeof(int), 64);
+  auto x_end =
+      reinterpret_cast<char *>(&p[0].x) + align_size(n * sizeof(int), 64);
   auto y_start = reinterpret_cast<char *>(&p[0].y);
   auto y_end = y_start + align_size(n * sizeof(double), 64);
   auto z_start = reinterpret_cast<char *>(&p[0].z);
@@ -152,11 +154,17 @@ template <typename T> void VerifyContiguousAllocation0_1_2_3(const T &p) {
   auto w_start = reinterpret_cast<char *>(&p[0].w);
   if (y_start != x_end || z_start != y_end || w_start != z_end) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
-    std::cerr << "\tMembers are not allocated contiguously. Partition boundaries are:\n"
-              << "\t\tx: [" << (long long) reinterpret_cast<char *>(&p[0].x) << ", " << (long long) x_end << "]\n"
-              << "\t\ty: [" << (long long) y_start << ", " << (long long) y_end << "]\n"
-              << "\t\tz: [" << (long long) z_start << ", " << (long long) z_end << "]\n"
-              << "\t\tw: [" << (long long) w_start << ", " << (long long) (w_start + align_size(n * sizeof(char), 64)) << "]\n";
+    std::cerr << "\tMembers are not allocated contiguously. Partition "
+                 "boundaries are:\n"
+              << "\t\tx: [" << (long long)reinterpret_cast<char *>(&p[0].x)
+              << ", " << (long long)x_end << "]\n"
+              << "\t\ty: [" << (long long)y_start << ", " << (long long)y_end
+              << "]\n"
+              << "\t\tz: [" << (long long)z_start << ", " << (long long)z_end
+              << "]\n"
+              << "\t\tw: [" << (long long)w_start << ", "
+              << (long long)(w_start + align_size(n * sizeof(char), 64))
+              << "]\n";
     failed = true;
   }
 
@@ -190,16 +198,17 @@ consteval {
 constexpr size_t alignment = 64;
 
 int main() {
-  using Container01_23 =
-      PartitionedContainer<SRef, SubStruct<SplitOp({0, 1}).data()>,
-                           SubStruct<SplitOp({2, 3}).data()>>;
+  using Container01_23 = PartitionedContainer<
+      SRef, Mapping({{0, 0}, {0, 1}, {1, 0}, {1, 1}}).data(),
+      SubStruct<SplitOp({0, 1}).data()>, SubStruct<SplitOp({2, 3}).data()>>;
   Container01_23 v1(1000, alignment), v2(1000, alignment);
 
   VectorSum(v1, v2);
   VerifyContiguousAllocation01_23(v1);
 
   using Container0_1_2_3 = PartitionedContainer<
-      SRef, SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
+      SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
+      SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
       SubStruct<SplitOp({2}).data()>, SubStruct<SplitOp({3}).data()>>;
   Container0_1_2_3 v3(1000, alignment);
   VerifyContiguousAllocation0_1_2_3(v3);

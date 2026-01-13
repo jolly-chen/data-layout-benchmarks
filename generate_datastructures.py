@@ -43,7 +43,9 @@ def generate_subsets(struct_name_base, members):
         f.write('#include "datastructures.h"\n')
         f.write('#include "struct_transformer.h"\n\n')
         f.write(generate_struct_definition(struct_name_base, members) + "\n\n")
-        f.write(generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n")
+        f.write(
+            generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n"
+        )
         f.write(f"template <auto Members> struct Sub{struct_name_base};\n\n")
 
         f.write(
@@ -74,7 +76,6 @@ def generate_partitions(members):
 
     Uses setpart1 in "Short Note: A Fast Iterative Algorithm for Generating Set Partitions"
     https://academic.oup.com/comjnl/article/32/3/281/331557
-
     """
     r = 0
     n = len(members)
@@ -108,6 +109,7 @@ def generate_partitions(members):
         if codeword[r] > g[r]:
             g[r] = codeword[r]
 
+
 def generate_partitioned_structs(struct_name_base, members):
     with open("main.cpp", "r") as f:
         lines = f.readlines()
@@ -119,14 +121,24 @@ def generate_partitioned_structs(struct_name_base, members):
         f.write(f"\t\t// THIS IS GENERATED USING generate_datastructures.py\n")
         for partition in generate_partitions(members):
             splitops = []
+            mapping = [None] * len(members)
 
-            for p in partition:
-                splitops.append(f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in p)}}}).data()>")
+            for si, subsets in enumerate(partition):
+                splitops.append(
+                    f"Sub{struct_name_base}<SplitOp({{{', '.join(str(m) for m in subsets)}}}).data()>"
+                )
+                for im, m in enumerate(subsets):
+                    mapping[m] = f"{{{si}, {im}}}"
 
-            f.write(f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}Ref, {', '.join(splitops)}>>(n, alignment);\n")
+            f.write(
+                f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}Ref,"
+                + f" Mapping({{{', '.join(mapping)}}}).data(),"
+                + f" {', '.join(splitops)}>>(n, alignment);\n"
+            )
 
         f.write("\t}\t\n\treturn 0;\n}\n")
         f.write(f"// END GENERATED CODE\n")
+
 
 if __name__ == "__main__":
     generate_subsets(struct_name_base, data_members)

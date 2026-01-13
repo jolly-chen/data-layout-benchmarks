@@ -38,6 +38,10 @@ consteval auto SplitOp(std::vector<int> indices) {
   return define_static_array(indices);
 }
 
+consteval auto Mapping(std::vector<std::pair<size_t, size_t>> mapping) {
+  return define_static_array(mapping);
+}
+
 /* Helper method to get a list of data_member_specs for members in
  * the struct S based on the given a list of indices
  */
@@ -75,36 +79,10 @@ inline size_t align_size(size_t size, size_t alignment) {
 
 ///////////////////
 
-/* Get the mapping of the original members to their locations in the partitions.
- * Returns a static array of pairs, where each pair contains the partition index
- * and the member index within that partition.
- */
-#pragma clang diagnostic ignored "-Wreturn-type"
-consteval auto find_in_partitions(std::meta::info original_type, std::meta::info partitioned_type) {
-  auto original_members = nsdms(original_type);
-  auto partitions = nsdms(partitioned_type);
-  std::vector<std::pair<size_t, size_t>> mapping(original_members.size());
-
-  for (size_t ip = 0; ip < partitions.size(); ++ip) {
-    auto span_type = template_arguments_of(type_of(partitions[ip]))[0];
-    auto partition_members = nsdms(span_type);
-    for (size_t im = 0; im < partition_members.size(); ++im) {
-      for (size_t io = 0; io < original_members.size(); ++io) {
-        if (identifier_of(original_members[io]) == identifier_of(partition_members[im])) {
-          mapping[io] = {ip, im};
-          break;
-        }
-      }
-    }
-  }
-
-  return std::define_static_array(mapping);
-}
-
 /// A container that takes partitions of the members of ProxyRef in its
 /// template parameters T..., and stores each partition in a separate array.
 /// The partitions are stored contiguously in memory, aligned to the size of a cacheline.
-template <typename ProxyRef, typename... T> struct PartitionedContainer {
+template <typename ProxyRef, auto Mapping, typename... T> struct PartitionedContainer {
 private:
   static_assert(nsdms(^^ProxyRef).size() == (... + nsdms(^^T).size()),
                 "PartitionedContainer: Total number of members in partitions "
@@ -117,8 +95,6 @@ private:
   Partitions p;
   alignas(64) std::vector<std::byte> storage;
   size_t n;
-
-  static constexpr auto mapping = find_in_partitions(^^ProxyRef, ^^Partitions);
 
   public:
   PartitionedContainer(size_t n, size_t alignment) : n(n) {
@@ -138,12 +114,13 @@ private:
     }
   }
 
+  #pragma clang diagnostic ignored "-Wreturn-type"
   inline ProxyRef operator[](const size_t index) const {
     return [&]<size_t... Is>(std::index_sequence<Is...>) constexpr -> ProxyRef {
       constexpr auto partitions = nsdms(^^Partitions);
-      return ProxyRef{ p.[: partitions[mapping[Is].first] :][index]
-                          .[: nsdms(template_arguments_of(type_of(partitions[mapping[Is].first]))[0])
-                              [mapping[Is].second] :]... };
+      return ProxyRef{ p.[: partitions[Mapping[Is].first] :][index]
+                          .[: nsdms(template_arguments_of(type_of(partitions[Mapping[Is].first]))[0])
+                              [Mapping[Is].second] :]... };
     }(std::make_index_sequence< nsdms(^^ProxyRef).size()>());
   }
 
