@@ -69,16 +69,43 @@ consteval void SplitStruct(SplitOps... ops) {
 // clang-format on
 
 /* Compute the aligned size for a given size and alignment. */
-size_t align_size(size_t size, size_t alignment) {
+inline size_t align_size(size_t size, size_t alignment) {
   return (size + alignment - 1) / alignment * alignment;
 }
 
 ///////////////////
 
+/* Get the mapping of the original members to their locations in the partitions.
+ * Returns a static array of pairs, where each pair contains the partition index
+ * and the member index within that partition.
+ */
+#pragma clang diagnostic ignored "-Wreturn-type"
+consteval auto find_in_partitions(std::meta::info original_type, std::meta::info partitioned_type) {
+  auto original_members = nsdms(original_type);
+  auto partitions = nsdms(partitioned_type);
+  std::vector<std::pair<size_t, size_t>> mapping(original_members.size());
+
+  for (size_t ip = 0; ip < partitions.size(); ++ip) {
+    auto span_type = template_arguments_of(type_of(partitions[ip]))[0];
+    auto partition_members = nsdms(span_type);
+    for (size_t im = 0; im < partition_members.size(); ++im) {
+      for (size_t io = 0; io < original_members.size(); ++io) {
+        if (identifier_of(original_members[io]) == identifier_of(partition_members[im])) {
+          mapping[io] = {ip, im};
+          break;
+        }
+      }
+    }
+  }
+
+  return std::define_static_array(mapping);
+}
+
 /// A container that takes partitions of the members of ProxyRef in its
 /// template parameters T..., and stores each partition in a separate array.
 /// The partitions are stored contiguously in memory, aligned to the size of a cacheline.
 template <typename ProxyRef, typename... T> struct PartitionedContainer {
+private:
   static_assert(nsdms(^^ProxyRef).size() == (... + nsdms(^^T).size()),
                 "PartitionedContainer: Total number of members in partitions "
                 "must equal number of members in ProxyRef");
@@ -87,10 +114,13 @@ template <typename ProxyRef, typename... T> struct PartitionedContainer {
     define_aggregate(^^Partitions, { data_member_spec(substitute(^^std::span, {^^T}))... });
   }
 
-  alignas(64) std::vector<std::byte> storage;
   Partitions p;
+  alignas(64) std::vector<std::byte> storage;
   size_t n;
 
+  static constexpr auto mapping = find_in_partitions(^^ProxyRef, ^^Partitions);
+
+  public:
   PartitionedContainer(size_t n, size_t alignment) : n(n) {
     // Allocate each partition
     size_t total_size = (0 + ... + align_size(n * sizeof(T), alignment));
@@ -108,24 +138,13 @@ template <typename ProxyRef, typename... T> struct PartitionedContainer {
     }
   }
 
-  inline ProxyRef operator[](size_t index) const {
-#pragma clang diagnostic ignored "-Wreturn-type"
-    auto get_arg = [index,
-                    this]<std::meta::info Om, typename Out>() constexpr -> Out {
-      template for (constexpr auto part : nsdms(^^Partitions)) {
-        constexpr auto span_type = template_arguments_of(type_of(part))[0];
-        template for (constexpr auto pm : nsdms(span_type)) {
-          if constexpr (identifier_of(Om) == identifier_of(pm)) {
-            return p.[:part:][index].[:pm:];
-          }
-        }
-      }
-    };
-
-    return [:expand_all(nonstatic_data_members_of(^^ProxyRef, std::meta::access_context::current()) ):] >>
-      [&]<auto... M> {
-        return ProxyRef { get_arg.template operator()<M, typename[:type_of(M):]>()... };
-    };
+  inline ProxyRef operator[](const size_t index) const {
+    return [&]<size_t... Is>(std::index_sequence<Is...>) constexpr -> ProxyRef {
+      constexpr auto partitions = nsdms(^^Partitions);
+      return ProxyRef{ p.[: partitions[mapping[Is].first] :][index]
+                          .[: nsdms(template_arguments_of(type_of(partitions[mapping[Is].first]))[0])
+                              [mapping[Is].second] :]... };
+    }(std::make_index_sequence< nsdms(^^ProxyRef).size()>());
   }
 
   size_t size() const { return n; }
