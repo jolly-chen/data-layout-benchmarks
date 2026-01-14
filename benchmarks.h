@@ -124,18 +124,21 @@ inline void InvariantMassRandom(const T &v1, const T &v2,
   }
 }
 
-template <typename T>
-inline void DeltaR2Pairwise(const T &v1, const T &v2,
-                            std::span<double> results,  std::span<size_t> v2_indices) {
-  const size_t n = v1.size();
+constexpr size_t deltar2_max_outer_size = 128;
 
-  for (size_t i = 0; i < n; i++) {
-    for (size_t v2_idx : v2_indices) {
-      size_t result_idx = (i * n + v2_idx) % results.size();
-      results[result_idx] = DeltaR2(v1[i].eta, v1[i].phi, v2[v2_idx].eta, v2[v2_idx].phi);
+template <typename T>
+inline void DeltaR2Pairwise(const T &v1, const T &v2, std::span<double> results) {
+  const size_t n = v1.size();
+  size_t idx = 0;
+
+  for (size_t i = 0; i < std::min(deltar2_max_outer_size, n); i++) {
+    for (size_t j = i; j < n; j++) {
+      results[idx] = DeltaR2(v1[i].eta, v1[i].phi, v2[j].eta, v2[j].phi);
+      idx = (idx + 1) % results.size();
     }
   }
 }
+
 } // namespace kernels
 
 template <typename T>
