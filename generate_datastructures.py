@@ -43,20 +43,13 @@ def generate_subsets(struct_name_base, members):
         f.write('#include "datastructures.h"\n')
         f.write('#include "struct_transformer.h"\n\n')
         f.write(generate_struct_definition(struct_name_base, members) + "\n\n")
-        f.write(
-            generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n"
-        )
-        f.write(f"template <auto Members> struct Sub{struct_name_base};\n\n")
+        f.write(generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n")
 
-        f.write(
-            "// Forward declarations of structures with a subset of Particle members\n"
-        )
         for subset in subsets:
-            f.write(
-                f"consteval {{ SplitStruct<{struct_name_base}, Sub{struct_name_base}>(SplitOp({{{', '.join(str(i) for i in subset)}}})); }}\n"
-            )
+            subset_string = "".join(str(i) for i in subset)
+            f.write(generate_struct_definition(f"Sub{struct_name_base}{subset_string}",
+                                               [members[i] for i in subset]) + "\n")
 
-        f.write("\n#endif // DATASTRUCTURES_H\n")
 
 
 def convert_codeword_to_partitions(set, codeword):
@@ -111,6 +104,94 @@ def generate_partitions(members):
 
 
 def generate_partitioned_structs(struct_name_base, members):
+    def subparticle_string(op):
+        return f"Sub{struct_name_base}{''.join(str(m) for m in op)}"
+
+    def define_partitions_struct(partition):
+        s = "struct Partitions {\n"
+        for si, subset in enumerate(partition):
+            s += f"\t\tstd::span<{subparticle_string(subset)}> p{si};\n"
+        s += "\t};"
+        return s
+
+    def assign_partitions(partition):
+        s = "size_t offset = 0;\n"
+        for si, subset in enumerate(partition):
+            memtype = subparticle_string(subset)
+            s += (
+                f"\t\tp.p{si} = std::span<{memtype}>("
+                + f"std::launder(reinterpret_cast<{memtype}*>(new (&storage[offset]) {memtype}[n])), n);\n"
+            )
+            s += f"\t\toffset += align_size(p.p{si}.size_bytes(), alignment);\n"
+        return s
+
+    def assign_proxyref(partition):
+        mapping = [None] * len(members)
+        for si, subset in enumerate(partition):
+            for im, m in enumerate(subset):
+                mapping[m] = [si, im]
+
+        s = f"return {struct_name_base}Ref{{ {', '.join([f'p.p{si}[index].{members[m][1]}' for m, (si, im) in enumerate(mapping)])} }};"
+        return s
+
+    def deallocate_partitions(partition):
+        s = "for (size_t i = n - 1; i == 0; --i) {\n"
+        for si, subset in enumerate(partition):
+            memtype = subparticle_string(subset)
+            s += f"\t\t\tp.p{si}[i].~{memtype}();\n"
+        s += "\t\t}"
+        return s
+
+
+    with open("datastructures.h", "a") as f:
+        p_list = []
+
+        for i, partition in enumerate(generate_partitions(members)):
+            partition_string = "_".join(
+                ["".join(str(m) for m in subset) for subset in partition]
+            )
+
+            if partition_string in p_list:
+                # print(f"Duplicate partition {partition_string}, skipping.")
+                continue
+            p_list.append(partition_string)
+
+            f.write(
+                f"""
+struct PartitionedContainer{partition_string} {{
+    { define_partitions_struct(partition) }
+
+    Partitions p;
+    alignas(64) std::vector<std::byte> storage;
+    size_t n;
+
+    PartitionedContainer{partition_string}(size_t n, size_t alignment) : n(n) {{
+        // Allocate each partition
+        size_t total_size = 0 + { " + ".join([ f"align_size(n * sizeof({subparticle_string(subset)}), alignment)" for subset in partition ]) };
+        storage.resize(total_size);
+
+        // Assign each partition to its location in the storage vector
+        { assign_partitions(partition) }
+    }}
+
+    inline {struct_name_base}Ref operator[](const size_t index) const {{
+        { assign_proxyref(partition) }
+    }}
+
+    size_t size() const {{ return n; }}
+
+    ~PartitionedContainer{partition_string}() {{
+        // Deallocate each partition
+        { deallocate_partitions(partition) }
+    }}
+}};
+"""
+            )
+
+        f.write("\n#endif // DATASTRUCTURES_H\n")
+        print(f"Generated {len(p_list)} partitioned data structures.")
+
+    #########
     with open("main.cpp", "r") as f:
         lines = f.readlines()
 
@@ -119,26 +200,13 @@ def generate_partitioned_structs(struct_name_base, members):
         f.writelines(lines[: main_start + 1])
 
         f.write(f"\t\t// THIS IS GENERATED USING generate_datastructures.py\n")
-        for partition in generate_partitions(members):
-            splitops = []
-            mapping = [None] * len(members)
-
-            for si, subsets in enumerate(partition):
-                splitops.append(
-                    f"Sub{struct_name_base}<SplitOp({{{', '.join(str(m) for m in subsets)}}}).data()>"
-                )
-                for im, m in enumerate(subsets):
-                    mapping[m] = f"{{{si}, {im}}}"
-
+        for partition in p_list:
             f.write(
-                f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}Ref,"
-                + f" Mapping({{{', '.join(mapping)}}}).data(),"
-                + f" {', '.join(splitops)}>>(n, alignment);\n"
+                f"\t\tRunAllBenchmarks<PartitionedContainer{partition}>(n, alignment);\n"
             )
 
         f.write("\t}\t\n\treturn 0;\n}\n")
         f.write(f"// END GENERATED CODE\n")
-
 
 if __name__ == "__main__":
     generate_subsets(struct_name_base, data_members)
