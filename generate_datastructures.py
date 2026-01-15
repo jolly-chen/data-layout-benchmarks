@@ -196,6 +196,9 @@ def generate_partitioned_structs(struct_name_base, members, start, end):
         s_list = []
 
         for partition in generate_partitions(members):
+            if len(p_list) >= end:
+                break
+
             # Encode e.g., [[0,2],[1,3]] as "02_13"
             partition_string = "_".join(
                 ["".join(str(m) for m in subset) for subset in partition]
@@ -209,9 +212,6 @@ def generate_partitioned_structs(struct_name_base, members, start, end):
 
             if len(p_list) < start:
                 continue
-
-            if len(p_list) >= end:
-                break
 
             write_partition(f, struct_name_base, partition_string, partition, members)
 
