@@ -158,7 +158,7 @@ def write_subsets(f, struct_name_base, members, subsets):
         f.write(generate_struct_definition(f"Sub{struct_name_base}{subset_string}",
                                             [members[i] for i in subset]) + "\n")
 
-def write_benchmarks(p_list):
+def write_benchmarks(p_list, contiguous):
     with open("main.cpp", "r") as f:
         lines = f.readlines()
 
@@ -169,7 +169,7 @@ def write_benchmarks(p_list):
         f.write(f"\t\t// THIS IS GENERATED USING generate_datastructures.py\n")
         for partition in p_list:
             f.write(
-                f"\t\tRunAllBenchmarks<PartitionedContainerContiguous{partition}>(n, alignment);\n"
+                f"\t\tRunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{partition}>(n, alignment);\n"
             )
 
         f.write("\t}\t\n\treturn 0;\n}\n")
@@ -272,7 +272,7 @@ def generate_partitioned_structs(struct_name_base, members, start, end, contiguo
         f.writelines(prev_lines)
         f.write(f"\n#endif // DATASTRUCTURES_H\n")
 
-    write_benchmarks(p_list[start:])
+    write_benchmarks(p_list[start:], contiguous)
 
 
 def generate_test_partitions():
