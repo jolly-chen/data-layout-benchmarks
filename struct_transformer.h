@@ -38,6 +38,36 @@ consteval auto SplitOp(std::vector<int> indices) {
   return define_static_array(indices);
 }
 
+/* Convert a list of SplitOps to a string. */
+template <typename ...Ops>
+std::string GetSplitOpsString() {
+  auto get_static_array_string = [](std::span<const int> arr, size_t i) {
+    std::string r = "";
+
+    if (i != 0)
+      r += ",";
+
+    r += "[";
+    for (size_t i = 0; i < arr.size(); ++i) {
+      r += std::to_string(arr[i]);
+      if (i != arr.size() - 1) {
+        r += ",";
+      }
+    }
+    r += "]";
+    return r;
+  };
+
+  auto get_splitops_string = [&]<size_t... Is>(std::index_sequence<Is...>) {
+    return (get_static_array_string([:template_arguments_of(^^Ops)[0]:], Is) +
+            ...);
+  };
+
+  std::string result = "[";
+  result += get_splitops_string(std::make_index_sequence<sizeof...(Ops)>());
+  return result + "]";
+}
+
 consteval auto Mapping(std::vector<std::pair<size_t, size_t>> mapping) {
   return define_static_array(mapping);
 }
@@ -93,14 +123,14 @@ private:
   }
 
   Partitions p;
-  alignas(64) std::vector<std::byte> storage;
+  std::byte *storage;
   size_t n;
 
   public:
   PartitionedContainer(size_t n, size_t alignment) : n(n) {
     // Allocate each partition
     size_t total_size = (0 + ... + align_size(n * sizeof(T), alignment));
-    storage.resize(total_size);
+    storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
 
     // Assign each partition to its location in the storage vector
     size_t offset = 0;
@@ -137,36 +167,8 @@ private:
         p.[:m:][i].~MemType();
       }
     }
-  }
 
-  /* Get a string that contains the partitioning information stored in the
-   * parameter pack T.  */
-  static std::string get_partitions_string() {
-    auto get_static_array_string = [](std::span<const int> arr, size_t i) {
-      std::string r = "";
-
-      if (i != 0)
-        r += ",";
-
-      r += "[";
-      for (size_t i = 0; i < arr.size(); ++i) {
-        r += std::to_string(arr[i]);
-        if (i != arr.size() - 1) {
-          r += ",";
-        }
-      }
-      r += "]";
-      return r;
-    };
-
-    auto get_splitops_string = [&]<size_t... Is>(std::index_sequence<Is...>) {
-      return (get_static_array_string([:template_arguments_of(^^T)[0]:], Is) +
-              ...);
-    };
-
-    std::string result = "[";
-    result += get_splitops_string(std::make_index_sequence<sizeof...(T)>());
-    return result + "]";
+    std::free(storage);
   }
 };
 
