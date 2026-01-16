@@ -1,5 +1,6 @@
 from itertools import permutations
 import numpy as np
+import argparse
 import sys
 
 
@@ -17,14 +18,14 @@ def generate_struct_definition(struct_name, members, type_modifier=""):
 def subparticle_string(op, struct_name_base):
     return f"Sub{struct_name_base}{''.join(str(m) for m in op)}"
 
-def define_partitions_struct(partition, struct_name_base):
+def define_contiguous_partitions_struct(partition, struct_name_base):
     s = "struct Partitions {\n"
     for si, subset in enumerate(partition):
         s += f"\t\tstd::span<{subparticle_string(subset, struct_name_base)}> p{si};\n"
     s += "\t};"
     return s
 
-def assign_partitions(partition, struct_name_base):
+def assign_contiguous_partitions(partition, struct_name_base):
     s = "size_t offset = 0;\n"
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base)
@@ -35,6 +36,40 @@ def assign_partitions(partition, struct_name_base):
         s += f"\t\toffset += align_size(p.p{si}.size_bytes(), alignment);\n"
     return s
 
+def deallocate_contiguous_partitions(partition, struct_name_base):
+    s = "for (size_t i = n - 1; i == 0; --i) {\n"
+    for si, subset in enumerate(partition):
+        memtype = subparticle_string(subset, struct_name_base)
+        s += f"\t\t\tp.p{si}[i].~{memtype}();\n"
+    s += "\t\t}\n\n"
+    s += "\t\tstd::free(storage);\n"
+    return s
+
+def define_partitions_struct(partition, struct_name_base):
+    s = "struct Partitions {\n"
+    for si, subset in enumerate(partition):
+        s += f"\t\t{subparticle_string(subset, struct_name_base)} *p{si};\n"
+    s += "\t};"
+    return s
+
+def assign_partitions(partition, struct_name_base):
+    s = ""
+    for si, subset in enumerate(partition):
+        memtype = subparticle_string(subset, struct_name_base)
+        if si != 0: s += "\n"
+        s += (
+            f"\t\tp.p{si} = static_cast<{memtype}*>(std::aligned_alloc(alignment, align_size(n * sizeof({memtype}), alignment)));"
+        )
+    return s
+
+def deallocate_partitions(partition, struct_name_base):
+    s = ""
+    for si, subset in enumerate(partition):
+        memtype = subparticle_string(subset, struct_name_base)
+        if si != 0: s += "\n"
+        s += f"\t\tstd::free(p.p{si});"
+    return s
+
 def assign_proxyref(members, partition, struct_name_base):
     mapping = [None] * len(members)
     for si, subset in enumerate(partition):
@@ -42,15 +77,6 @@ def assign_proxyref(members, partition, struct_name_base):
             mapping[m] = [si, im]
 
     s = f"return {struct_name_base}Ref{{ {', '.join([f'p.p{si}[index].{members[m][1]}' for m, (si, im) in enumerate(mapping)])} }};"
-    return s
-
-def deallocate_partitions(partition, struct_name_base):
-    s = "for (size_t i = n - 1; i == 0; --i) {\n"
-    for si, subset in enumerate(partition):
-        memtype = subparticle_string(subset, struct_name_base)
-        s += f"\t\t\tp.p{si}[i].~{memtype}();\n"
-    s += "\t\t}\n\n"
-    s += "\t\tstd::free(storage);\n"
     return s
 
 
@@ -66,22 +92,47 @@ def convert_codeword_to_partitions(codeword):
 ###########
 # Generators #
 ###########
+def write_contiguous_partition(f, struct_name_base, partition_string, partition, members):
+    f.write(f"""
+struct PartitionedContainerContiguous{partition_string} {{
+    { define_contiguous_partitions_struct(partition, struct_name_base) }
+
+    Partitions p;
+    std::byte *storage;
+    size_t n;
+
+    PartitionedContainerContiguous{partition_string}(size_t n, size_t alignment) : n(n) {{
+        // Allocate each partition
+        size_t total_size = 0 + { " + ".join([ f"align_size(n * sizeof({subparticle_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
+        storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
+
+        // Assign each partition to its location in the storage vector
+        { assign_contiguous_partitions(partition, struct_name_base) }
+    }}
+
+    inline {struct_name_base}Ref operator[](const size_t index) const {{
+        { assign_proxyref(members, partition, struct_name_base) }
+    }}
+
+    size_t size() const {{ return n; }}
+
+    ~PartitionedContainerContiguous{partition_string}() {{
+        // Deallocate each partition
+        { deallocate_contiguous_partitions(partition, struct_name_base) }
+    }}
+}};
+""")
 
 def write_partition(f, struct_name_base, partition_string, partition, members):
     f.write(f"""
 struct PartitionedContainer{partition_string} {{
     { define_partitions_struct(partition, struct_name_base) }
 
-    Partitions p;
-    std::byte *storage;
-    size_t n;
+  Partitions p;
+  size_t n;
 
+public:
     PartitionedContainer{partition_string}(size_t n, size_t alignment) : n(n) {{
-        // Allocate each partition
-        size_t total_size = 0 + { " + ".join([ f"align_size(n * sizeof({subparticle_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
-        storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
-
-        // Assign each partition to its location in the storage vector
         { assign_partitions(partition, struct_name_base) }
     }}
 
@@ -96,8 +147,7 @@ struct PartitionedContainer{partition_string} {{
         { deallocate_partitions(partition, struct_name_base) }
     }}
 }};
-"""
-    )
+""")
 
 def write_subsets(f, struct_name_base, members, subsets):
     f.write(generate_struct_definition(struct_name_base, members) + "\n\n")
@@ -119,13 +169,13 @@ def write_benchmarks(p_list):
         f.write(f"\t\t// THIS IS GENERATED USING generate_datastructures.py\n")
         for partition in p_list:
             f.write(
-                f"\t\tRunAllBenchmarks<PartitionedContainer{partition}>(n, alignment);\n"
+                f"\t\tRunAllBenchmarks<PartitionedContainerContiguous{partition}>(n, alignment);\n"
             )
 
         f.write("\t}\t\n\treturn 0;\n}\n")
         f.write(f"// END GENERATED CODE\n")
 
-def generate_partitions(members):
+def generate_partitions(members, contiguous):
     """
     Generates all the ways in which the members can be partitioned into seperate structs.
     Includes all permutations of members within each partition.
@@ -133,6 +183,16 @@ def generate_partitions(members):
     Uses setpart1 in "Short Note: A Fast Iterative Algorithm for Generating Set Partitions"
     https://academic.oup.com/comjnl/article/32/3/281/331557
     """
+    def permute_elements_in_subset(partition):
+        if any(len(p) > 1 for p in partition):
+            for i, p in enumerate(partition):
+                if len(p) > 1:
+                    for subset_perm in permutations(p):
+                        partition[i] = list(subset_perm)
+                        yield partition
+        else:
+            yield partition
+
     r = 0
     n = len(members)
     codeword = np.repeat(1, n + 1)
@@ -147,16 +207,14 @@ def generate_partitions(members):
         for j in range(1, g[n1] + 2):
             codeword[n] = j
             partition = convert_codeword_to_partitions(codeword[1:])
-            for partition_perm in permutations(partition):
-                partition_perm = list(partition_perm)
-                if any(len(p) > 1 for p in partition_perm):
-                    for i, p in enumerate(partition_perm):
-                        if len(p) > 1:
-                            for subset_perm in permutations(p):
-                                partition_perm[i] = list(subset_perm)
-                                yield partition_perm
-                else:
-                    yield partition_perm
+            if contiguous:
+                for partition_perm in permutations(partition):
+                    partition_perm = list(partition_perm)
+                    for permuted in permute_elements_in_subset(partition_perm):
+                        yield permuted
+            else:
+                for permuted in permute_elements_in_subset(partition):
+                        yield permuted
 
         while codeword[r] > g[r - 1]:
             r -= 1
@@ -166,12 +224,12 @@ def generate_partitions(members):
             g[r] = codeword[r]
 
 
-def generate_partitioned_structs(struct_name_base, members, start, end):
+def generate_partitioned_structs(struct_name_base, members, start, end, contiguous):
     with open("datastructures.h", "w") as f:
         p_list = []
         s_list = []
 
-        for partition in generate_partitions(members):
+        for partition in generate_partitions(members, contiguous):
             if end and len(p_list) >= end:
                 break
 
@@ -189,7 +247,10 @@ def generate_partitioned_structs(struct_name_base, members, start, end):
             if len(p_list) < start:
                 continue
 
-            write_partition(f, struct_name_base, partition_string, partition, members)
+            if contiguous:
+                write_contiguous_partition(f, struct_name_base, partition_string, partition, members)
+            else:
+                write_partition(f, struct_name_base, partition_string, partition, members)
 
             for subset in partition:
                 if subset not in s_list:
@@ -229,6 +290,7 @@ def generate_test_partitions():
             partition_string = "_".join(
                 ["".join(str(m) for m in subset) for subset in partition]
             )
+            write_contiguous_partition(f, struct_name_base, partition_string, partition, members)
             write_partition(f, struct_name_base, partition_string, partition, members)
 
             for subset in partition:
@@ -250,14 +312,18 @@ def generate_test_partitions():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--batch_size', type=int, help="Set output directory", default=-1)
+    parser.add_argument('--batch_num', type=int, help='Set input file(s)', default=0)
+    parser.add_argument('--contiguous', action=argparse.BooleanOptionalAction, default=True, help='Generate contiguous partitioned structures')
+    args = parser.parse_args()
+
+    if args.batch_size == -1:
         start = 0
         end = None
     else:
-        batch_size = int(sys.argv[1])
-        batch_num = int(sys.argv[2])
-        start = batch_num * batch_size
-        end = start + batch_size
+        start = args.batch_num * args.batch_size
+        end = start + args.batch_size
 
     data_members = [
         ("int", "id"),
@@ -271,5 +337,5 @@ if __name__ == "__main__":
 
     struct_name_base = "Particle"
 
-    generate_partitioned_structs(struct_name_base, data_members, start, end)
+    generate_partitioned_structs(struct_name_base, data_members, start, end, args.contiguous)
     generate_test_partitions()

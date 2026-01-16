@@ -112,10 +112,10 @@ inline size_t align_size(size_t size, size_t alignment) {
 /// A container that takes partitions of the members of ProxyRef in its
 /// template parameters T..., and stores each partition in a separate array.
 /// The partitions are stored contiguously in memory, aligned to the size of a cacheline.
-template <typename ProxyRef, auto Mapping, typename... T> struct PartitionedContainer {
+template <typename ProxyRef, auto Mapping, typename... T> struct PartitionedContainerContiguous {
 private:
   static_assert(nsdms(^^ProxyRef).size() == (... + nsdms(^^T).size()),
-                "PartitionedContainer: Total number of members in partitions "
+                "PartitionedContainerContiguous: Total number of members in partitions "
                 "must equal number of members in ProxyRef");
   struct Partitions;
   consteval {
@@ -127,7 +127,7 @@ private:
   size_t n;
 
   public:
-  PartitionedContainer(size_t n, size_t alignment) : n(n) {
+  PartitionedContainerContiguous(size_t n, size_t alignment) : n(n) {
     // Allocate each partition
     size_t total_size = (0 + ... + align_size(n * sizeof(T), alignment));
     storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
@@ -156,7 +156,7 @@ private:
 
   size_t size() const { return n; }
 
-  ~PartitionedContainer() {
+  ~PartitionedContainerContiguous() {
     // Deallocate each partition
     template for (constexpr auto I : std::views::iota(0zu, sizeof...(T))) {
       using MemType = T...[I];
@@ -172,4 +172,50 @@ private:
   }
 };
 
+
+/// A container that takes partitions of the members of ProxyRef in its
+/// template parameters T..., and stores each partition in a separate array.
+/// The partitions are stored in separate arrays aligned to cacheline size,
+/// in different memory locations.
+template <typename ProxyRef, auto Mapping, typename... T> struct PartitionedContainer {
+private:
+  static_assert(nsdms(^^ProxyRef).size() == (... + nsdms(^^T).size()),
+                "PartitionedContainer: Total number of members in partitions "
+                "must equal number of members in ProxyRef");
+  struct Partitions;
+  consteval {
+    define_aggregate(^^Partitions, { data_member_spec(add_pointer(^^T))... });
+  }
+
+  Partitions p;
+  size_t n;
+
+public:
+  PartitionedContainer(size_t n, size_t alignment) : n(n) {
+    // Allocate each partition
+    template for (constexpr auto m : nsdms(^^Partitions)) {
+      p.[: m :] = static_cast<typename[: type_of(m) :]>(
+        std::aligned_alloc(alignment,
+                           align_size(n * sizeof(typename[: remove_pointer(type_of(m)) :]), alignment)));
+    }
+  }
+
+  #pragma clang diagnostic ignored "-Wreturn-type"
+  inline ProxyRef operator[](const size_t index) const {
+    return [&]<size_t... Is>(std::index_sequence<Is...>) constexpr -> ProxyRef {
+      constexpr auto partitions = nsdms(^^Partitions);
+      return ProxyRef{ p.[: partitions[Mapping[Is].first] :][index]
+                          .[: nsdms(remove_pointer(type_of(partitions[Mapping[Is].first])))[Mapping[Is].second] :]... };
+    }(std::make_index_sequence< nsdms(^^ProxyRef).size()>());
+  }
+
+  size_t size() const { return n; }
+
+  ~PartitionedContainer() {
+    // Deallocate each partition
+    template for (constexpr auto m : nsdms(^^Partitions)) {
+      std::free(p.[: m :]);
+    }
+  }
+};
 #endif // STRUCT_TRANSFORMER_H

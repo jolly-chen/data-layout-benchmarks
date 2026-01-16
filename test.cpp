@@ -55,7 +55,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
   if (x0_y0_diff != sizeof(double)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
     std::cerr
-        << "\tNon- allocation detected between x[0] and y[0]: gap of "
+        << "\tNon-contiguous allocation detected between x[0] and y[0]: gap of "
         << x0_y0_diff << "\n";
     return;
   }
@@ -63,7 +63,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
   if (y0_x1_diff != sizeof(double)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
     std::cerr
-        << "\tNon- allocation detected between y[0] and x[1]: gap of "
+        << "\tNon-contiguous allocation detected between y[0] and x[1]: gap of "
         << y0_x1_diff << "\n";
     return;
   }
@@ -71,7 +71,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
   if (z0_w0_diff != sizeof(float)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
     std::cerr
-        << "\tNon- allocation detected between z[0] and w[0]: gap of "
+        << "\tNon-contiguous allocation detected between z[0] and w[0]: gap of "
         << z0_w0_diff << "\n";
     return;
   }
@@ -79,7 +79,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
   if (w0_z1_diff != sizeof(float)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
     std::cerr
-        << "\tNon- allocation detected between w[0] and z[1]: gap of "
+        << "\tNon-contiguous allocation detected between w[0] and z[1]: gap of "
         << w0_z1_diff << "\n";
     return;
   }
@@ -90,7 +90,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
   auto first_z = reinterpret_cast<char *>(&p[0].z);
   if (last_y != first_z) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
-    std::cerr << "\tMembers are not allocated ly: end of first "
+    std::cerr << "\tMembers are not allocated contiguously: end of first "
                  "partition is "
               << last_y << " and the start of second partition is " << first_z
               << "\n";
@@ -218,40 +218,49 @@ constexpr size_t alignment = 64;
 
 int main() {
   ////// Reflection generated containers
-  using RContainer01_23 = PartitionedContainer<
+  using RContiguousContainer01_23 = PartitionedContainerContiguous<
       SRef, Mapping({{0, 0}, {0, 1}, {1, 0}, {1, 1}}).data(),
       SubStruct<SplitOp({0, 1}).data()>, SubStruct<SplitOp({2, 3}).data()>>;
-  RContainer01_23 r1_01_23(1000, alignment), r2_01_23(1000, alignment);
+  RContiguousContainer01_23 rc1_01_23(1000, alignment), rc2_01_23(1000, alignment);
+  VectorSum(rc1_01_23, rc2_01_23, "RContiguousContainer01_23");
+  VerifyAllocation01_23(rc1_01_23, "RContiguousContainer01_23");
 
-  VectorSum(r1_01_23, r2_01_23, "RContainer01_23");
-  VerifyAllocation01_23(r1_01_23, "RContainer01_23");
-
-  using RContainer0_1_2_3 = PartitionedContainer<
+  using RContiguousContainer0_1_2_3 = PartitionedContainerContiguous<
       SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
       SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
       SubStruct<SplitOp({2}).data()>, SubStruct<SplitOp({3}).data()>>;
-  RContainer0_1_2_3 r1_0_1_2_3(1000, alignment);
-  VerifyAllocation0_1_2_3(r1_0_1_2_3, "RContainer0_1_2_3");
+  RContiguousContainer0_1_2_3 rc1_0_1_2_3(1000, alignment);
+  VerifyAllocation0_1_2_3(rc1_0_1_2_3, "RContiguousContainer0_1_2_3");
+
+  using RContiguousContainer0_1_23 = PartitionedContainerContiguous<
+      SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
+      SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
+      SubStruct<SplitOp({2}).data()>, SubStruct<SplitOp({3}).data()>>;
+  RContiguousContainer0_1_23 rc1_0_1_23(1000, alignment);
+  VerifyAlignment0_1_23(rc1_0_1_23, "RContiguousContainer0_1_23");
 
   using RContainer0_1_23 = PartitionedContainer<
       SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
       SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
       SubStruct<SplitOp({2}).data()>, SubStruct<SplitOp({3}).data()>>;
-  RContainer0_1_23 r1_0_1_23(1000, alignment), r2_0_1_23(1000, alignment);
+  RContainer0_1_23 r1_0_1_23(1000, alignment);
   VerifyAlignment0_1_23(r1_0_1_23, "RContainer0_1_23");
 
   ////// Python generated structures
-  using PyContainer01_23 = PartitionedContainer01_23;
-  PyContainer01_23 p1_01_23(1000, alignment), p2_01_23(1000, alignment);
-  VectorSum(p1_01_23, p2_01_23, "PyContainer01_23");
-  VerifyAllocation01_23(p1_01_23, "PyContainer01_23");
+  using PyContainerContiguous01_23 = PartitionedContainerContiguous01_23;
+  PyContainerContiguous01_23 pc1_01_23(1000, alignment), pc2_01_23(1000, alignment);
+  VectorSum(pc1_01_23, pc2_01_23, "PyContainerContiguous01_23");
+  VerifyAllocation01_23(pc1_01_23, "PyContainerContiguous01_23");
 
-  using PyContainer0_1_2_3 = PartitionedContainer0_1_2_3;
-  PyContainer0_1_2_3 p1_0_1_2_3(1000, alignment);
-  VerifyAllocation0_1_2_3(p1_0_1_2_3, "PyContainer0_1_2_3");
+  using PyContainerContiguous0_1_2_3 = PartitionedContainerContiguous0_1_2_3;
+  PyContainerContiguous0_1_2_3 pc1_0_1_2_3(1000, alignment);
+  VerifyAllocation0_1_2_3(pc1_0_1_2_3, "PyContainerContiguous0_1_2_3");
+
+  using PyContainerContiguous0_1_23 = PartitionedContainerContiguous0_1_23;
+  PyContainerContiguous0_1_23 pc1_0_1_23(1000, alignment);
+  VerifyAlignment0_1_23(pc1_0_1_23, "PyContainerContiguous0_1_23");
 
   using PyContainer0_1_23 = PartitionedContainer0_1_23;
   PyContainer0_1_23 p1_0_1_23(1000, alignment);
   VerifyAlignment0_1_23(p1_0_1_23, "PyContainer0_1_23");
-
 }
