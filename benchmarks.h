@@ -141,18 +141,4 @@ inline void DeltaR2Pairwise(const T &v1, const T &v2, std::span<double> results)
 
 } // namespace kernels
 
-template <typename T>
-inline void DeltaR2Pairwise(const T &v1, const T &v2,
-                            std::span<double> results) {
-  const size_t n = v1.size();
-
-  for (size_t i = 0; i < n; i++) {
-    for (size_t j = 0; j < n; j++) {
-      size_t idx = (i * n + j) % results.size();
-      results[idx] = DeltaR2(v1[i].eta, v1[i].phi, v2[j].eta, v2[j].phi);
-    }
-  }
-}
-} // namespace kernels
-
 #endif
