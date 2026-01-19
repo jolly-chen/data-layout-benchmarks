@@ -4,12 +4,17 @@ project(data_layout_benchmarks)
 
 set(CMAKE_CXX_STANDARD 26)
 
-add_compile_options(-g -Wall -Wextra -freflection-latest -stdlib=libc++)
+add_compile_options(-O3 -Wall -Wextra -freflection-latest -stdlib=libc++)
 add_link_options(-stdlib=libc++)
 
 find_package(likwid CONFIG REQUIRED)
 link_libraries(likwid::likwid)
 include_directories(${LIKWID_INCLUDE_DIRS}) # if not set in likwid-config.cmake
+
+if (vec)
+    message(STATUS "Enabling vectorization flags")
+    add_compile_options(-march=native -ftree-vectorize -ffast-math)
+endif()
 
 add_executable(test test.cpp)
 # target_precompile_headers(test PUBLIC datastructures.h) # crashes the compiler?
