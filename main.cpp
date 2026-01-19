@@ -266,10 +266,8 @@ int main(int argc, char *argv[]) {
   }
 
   if (write_header) {
-	// Header for CSV output
-	*output << "benchmark,partitions,problem_size,container_byte_size,time_ratio,"
-				"min,max,"
-				"avg,stddev\n";
+	  // Write header for CSV if the output file does not already exist.
+	  *output << "benchmark,container,problem_size,container_byte_size,time_unit,min,max,avg,stddev\n";
   }
 
   auto err = topology_init();
@@ -23981,7 +23979,7 @@ int main(int argc, char *argv[]) {
 		RunAllBenchmarks<PartitionedContainerContiguous0_1_2_3_4_56>(n, alignment);
 		RunAllBenchmarks<PartitionedContainerContiguous0_1_2_3_4_65>(n, alignment);
 		RunAllBenchmarks<PartitionedContainerContiguous0_1_2_3_4_5_6>(n, alignment);
-	}	
+	}
 	return 0;
 }
 // END GENERATED CODE
