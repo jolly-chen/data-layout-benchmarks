@@ -1,14 +1,26 @@
+# !/usr/bin/env python3
+
+# This script generates partitioned data structures for benchmarking different data layouts in main.cpp.
+# It creates C++ struct definitions of containers that partition the members of a base struct into substructures,
+# either in contiguous memory or separately allocated. The generated containers provide an
+# Array of Structures (AoS)-like interface via proxy reference structs.
+
 from itertools import permutations
 import numpy as np
 import argparse
-import sys
-
 
 ###########
 # Helpers #
 ###########
 
 def generate_struct_definition(struct_name, members, type_modifier=""):
+    """
+    Get the C++ struct definition as a string.
+
+    :param struct_name: Name of the struct
+    :param members: List of tuples (data_type, member_name)
+    :param type_modifier: Modifier to append to each data type (e.g., "&")
+    """
     lines = [f"struct {struct_name} {{"]
     for dtype, name in members:
         lines.append(f"    {dtype}{type_modifier} {name};")
@@ -16,9 +28,21 @@ def generate_struct_definition(struct_name, members, type_modifier=""):
     return "\n".join(lines)
 
 def subparticle_string(op, struct_name_base):
+    """
+    Get the subparticle struct name for a given split operation.
+
+    :param op: List of member indices from the original struct that need to be included in the subparticle
+    :param struct_name_base: Base name of the struct
+    """
     return f"Sub{struct_name_base}{''.join(str(m) for m in op)}"
 
 def define_contiguous_partitions_struct(partition, struct_name_base):
+    """
+    Get the string that defines a struct containing each partition as std::span members.
+
+    :param partition: List of partitions, each a list of member indices
+    :param struct_name_base: Base name of the struct
+    """
     s = "struct Partitions {\n"
     for si, subset in enumerate(partition):
         s += f"\t\tstd::span<{subparticle_string(subset, struct_name_base)}> p{si};\n"
@@ -26,6 +50,12 @@ def define_contiguous_partitions_struct(partition, struct_name_base):
     return s
 
 def assign_contiguous_partitions(partition, struct_name_base):
+    """
+    Get the string that assigns each partition to its location in the storage vector.
+
+    :param partition: List of partitions, each a list of member indices
+    :param struct_name_base: Base name of the struct
+    """
     s = "size_t offset = 0;\n"
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base)
@@ -37,6 +67,12 @@ def assign_contiguous_partitions(partition, struct_name_base):
     return s
 
 def deallocate_contiguous_partitions(partition, struct_name_base):
+    """
+    Get the string that deallocates each partition from the storage vector.
+
+    :param partition: List of partitions, each a list of member indices
+    :param struct_name_base: Base name of the struct
+    """
     s = "for (size_t i = n - 1; i == 0; --i) {\n"
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base)
@@ -46,6 +82,12 @@ def deallocate_contiguous_partitions(partition, struct_name_base):
     return s
 
 def define_partitions_struct(partition, struct_name_base):
+    """
+    Get the string that defines a struct containing each partition as pointer members.
+
+    :param partition: List of partitions, each a list of member indices
+    :param struct_name_base: Base name of the struct
+    """
     s = "struct Partitions {\n"
     for si, subset in enumerate(partition):
         s += f"\t\t{subparticle_string(subset, struct_name_base)} *p{si};\n"
@@ -53,6 +95,12 @@ def define_partitions_struct(partition, struct_name_base):
     return s
 
 def assign_partitions(partition, struct_name_base):
+    """
+    Get the string that allocates each partition separately, using an aligned allocator.
+
+    :param partition: List of partitions, each a list of member indices
+    :param struct_name_base: Base name of the struct
+    """
     s = ""
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base)
@@ -63,6 +111,12 @@ def assign_partitions(partition, struct_name_base):
     return s
 
 def deallocate_partitions(partition, struct_name_base):
+    """
+    Get the string that deallocates each partition separately.
+
+    :param partition: List of partitions, each a list of member indices
+    :param struct_name_base: Base name of the struct
+    """
     s = ""
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base)
@@ -71,6 +125,13 @@ def deallocate_partitions(partition, struct_name_base):
     return s
 
 def assign_proxyref(members, partition, struct_name_base):
+    """
+    Get the string that returns a proxy reference struct in operator[].
+
+    :param members: List of tuples (data_type, member_name)
+    :param partition: List of partitions, each a list of member indices
+    :param struct_name_base: Base name of the struct
+    """
     mapping = [None] * len(members)
     for si, subset in enumerate(partition):
         for im, m in enumerate(subset):
@@ -83,105 +144,29 @@ def assign_proxyref(members, partition, struct_name_base):
 def convert_codeword_to_partitions(codeword):
     """
     Convert a codeword to list partitions of the set.
+
+    :param codeword: List of integers representing the codeword
     """
     partitions = [[] for _ in range(len(codeword))]
     for i, c in enumerate(codeword):
         partitions[c - 1].append(i)
     return [p for p in partitions if p]
 
-###########
+##############
 # Generators #
-###########
-def write_contiguous_partition(f, struct_name_base, partition_string, partition, members):
-    f.write(f"""
-struct PartitionedContainerContiguous{partition_string} {{
-    { define_contiguous_partitions_struct(partition, struct_name_base) }
-
-    Partitions p;
-    std::byte *storage;
-    size_t n;
-
-    PartitionedContainerContiguous{partition_string}(size_t n, size_t alignment) : n(n) {{
-        // Allocate each partition
-        size_t total_size = 0 + { " + ".join([ f"align_size(n * sizeof({subparticle_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
-        storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
-
-        // Assign each partition to its location in the storage vector
-        { assign_contiguous_partitions(partition, struct_name_base) }
-    }}
-
-    inline {struct_name_base}Ref operator[](const size_t index) const {{
-        { assign_proxyref(members, partition, struct_name_base) }
-    }}
-
-    size_t size() const {{ return n; }}
-
-    ~PartitionedContainerContiguous{partition_string}() {{
-        // Deallocate each partition
-        { deallocate_contiguous_partitions(partition, struct_name_base) }
-    }}
-}};
-""")
-
-def write_partition(f, struct_name_base, partition_string, partition, members):
-    f.write(f"""
-struct PartitionedContainer{partition_string} {{
-    { define_partitions_struct(partition, struct_name_base) }
-
-  Partitions p;
-  size_t n;
-
-public:
-    PartitionedContainer{partition_string}(size_t n, size_t alignment) : n(n) {{
-        { assign_partitions(partition, struct_name_base) }
-    }}
-
-    inline {struct_name_base}Ref operator[](const size_t index) const {{
-        { assign_proxyref(members, partition, struct_name_base) }
-    }}
-
-    size_t size() const {{ return n; }}
-
-    ~PartitionedContainer{partition_string}() {{
-        // Deallocate each partition
-        { deallocate_partitions(partition, struct_name_base) }
-    }}
-}};
-""")
-
-def write_subsets(f, struct_name_base, members, subsets):
-    f.write(generate_struct_definition(struct_name_base, members) + "\n\n")
-    f.write(generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n")
-
-    for subset in subsets:
-        subset_string = "".join(str(i) for i in subset)
-        f.write(generate_struct_definition(f"Sub{struct_name_base}{subset_string}",
-                                            [members[i] for i in subset]) + "\n")
-
-def write_benchmarks(p_list, contiguous):
-    with open("main.cpp", "r") as f:
-        lines = f.readlines()
-
-    with open("main.cpp", "w") as f:
-        main_start = [i for i, l in enumerate(lines) if "problem_sizes" in l][-1]
-        f.writelines(lines[: main_start + 1])
-
-        f.write(f"\t\t// THIS IS GENERATED USING generate_datastructures.py\n")
-        for partition in p_list:
-            f.write(
-                f"\t\tRunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{partition}>(n, alignment);\n"
-            )
-
-        f.write("\t}\t\n\treturn 0;\n}\n")
-        f.write(f"// END GENERATED CODE\n")
+##############
 
 def generate_partitions(members, contiguous):
     """
-    Generates all the ways in which the members can be partitioned into seperate structs.
+    Generates all the ways in which the members can be partitioned into substructures.
     Includes all permutations of members within each partition.
 
     Uses setpart1 in "Short Note: A Fast Iterative Algorithm for Generating Set Partitions"
     https://academic.oup.com/comjnl/article/32/3/281/331557
+
+    :param members: List of tuples (data_type, member_name) containing all members in the original structure
+    :param contiguous: Whether to generate only contiguous partitions. If True, also permutes the order of partitions.
+    Yields: List of partitions, each a list of member indices
     """
     def permute_elements_in_subset(partition):
         if any(len(p) > 1 for p in partition):
@@ -224,7 +209,141 @@ def generate_partitions(members, contiguous):
             g[r] = codeword[r]
 
 
-def generate_partitioned_structs(struct_name_base, members, start, end, contiguous):
+###########
+# Writers #
+###########
+
+def write_contiguous_partition(f, struct_name_base, partition_string, partition, members):
+    """
+    Write a structure definition for a container that stores contiguous partitions, each with a subset
+    of the data members in the original structure. The container provides a AoS-like interface
+    by returning a proxy reference struct in operator[].
+
+    :param f: File object to write to
+    :param struct_name_base: Base name of the struct
+    :param partition_string: String representation of the partition
+    :param partition: List of partitions, each a list of member indices
+    :param members: List of tuples (data_type, member_name) containing all members in the original struct
+    """
+    f.write(f"""
+struct PartitionedContainerContiguous{partition_string} {{
+    { define_contiguous_partitions_struct(partition, struct_name_base) }
+
+    Partitions p;
+    std::byte *storage;
+    size_t n;
+
+    PartitionedContainerContiguous{partition_string}(size_t n, size_t alignment) : n(n) {{
+        // Allocate each partition
+        size_t total_size = 0 + { " + ".join([ f"align_size(n * sizeof({subparticle_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
+        storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
+
+        // Assign each partition to its location in the storage vector
+        { assign_contiguous_partitions(partition, struct_name_base) }
+    }}
+
+    inline {struct_name_base}Ref operator[](const size_t index) const {{
+        { assign_proxyref(members, partition, struct_name_base) }
+    }}
+
+    size_t size() const {{ return n; }}
+
+    ~PartitionedContainerContiguous{partition_string}() {{
+        // Deallocate each partition
+        { deallocate_contiguous_partitions(partition, struct_name_base) }
+    }}
+}};
+""")
+
+def write_partition(f, struct_name_base, partition_string, partition, members):
+    """
+    Write a structure definition for a container that stores partitions, not necessarily contiguous,
+    each with a subset of the data members in the original structure. The container provides a
+    AoS-like interface by returning a proxy reference struct in operator[].
+
+    :param f: File object to write to
+    :param struct_name_base: Base name of the struct
+    :param partition_string: String representation of the partition
+    :param partition: List of partitions, each a list of member indices
+    :param members: List of tuples (data_type, member_name) containing all members in the original structure
+    """
+    f.write(f"""
+struct PartitionedContainer{partition_string} {{
+    { define_partitions_struct(partition, struct_name_base) }
+
+  Partitions p;
+  size_t n;
+
+public:
+    PartitionedContainer{partition_string}(size_t n, size_t alignment) : n(n) {{
+        { assign_partitions(partition, struct_name_base) }
+    }}
+
+    inline {struct_name_base}Ref operator[](const size_t index) const {{
+        { assign_proxyref(members, partition, struct_name_base) }
+    }}
+
+    size_t size() const {{ return n; }}
+
+    ~PartitionedContainer{partition_string}() {{
+        // Deallocate each partition
+        { deallocate_partitions(partition, struct_name_base) }
+    }}
+}};
+""")
+
+def write_subsets(f, struct_name_base, members, subsets):
+    """
+    Write struct definitions for all substructures used in the partitions.
+    The substructures contain only a subset of the data members in the original structure.
+
+    :param f: File object to write to
+    :param struct_name_base: Base name of the struct
+    :param members: List of tuples (data_type, member_name) containing all members in the original structure
+    :param subsets: List of subsets, each a list of member indices
+    """
+    f.write(generate_struct_definition(struct_name_base, members) + "\n\n")
+    f.write(generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n")
+
+    for subset in subsets:
+        subset_string = "".join(str(i) for i in subset)
+        f.write(generate_struct_definition(f"Sub{struct_name_base}{subset_string}",
+                                            [members[i] for i in subset]) + "\n")
+
+def write_benchmarks(p_list, contiguous):
+    """
+    Write the benchmark invocations in main.cpp for all generated partitioned containers.
+
+    :param p_list: List of partition strings
+    :param contiguous: Whether to use contiguous partitioned containers
+    """
+    with open("main.cpp", "r") as f:
+        lines = f.readlines()
+
+    with open("main.cpp", "w") as f:
+        main_start = [i for i, l in enumerate(lines) if "problem_sizes" in l][-1]
+        f.writelines(lines[: main_start + 1])
+
+        f.write(f"\t\t// THIS IS GENERATED USING generate_datastructures.py\n")
+        for partition in p_list:
+            f.write(
+                f"\t\tRunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{partition}>(n, alignment);\n"
+            )
+
+        f.write("\t}\t\n\treturn 0;\n}\n")
+        f.write(f"// END GENERATED CODE\n")
+
+def write_partitioned_structs(struct_name_base, members, start, end, contiguous):
+    """
+    Generate partitioned data structures and write them to datastructures.h.
+    Also write benchmark invocations to main.cpp.
+
+    :param struct_name_base: Base name of the struct
+    :param members: List of tuples (data_type, member_name) containing all members in the original structure
+    :param start: Start index for batching
+    :param end: End index for batching
+    :param contiguous: Whether to generate contiguous partitioned structures
+    """
     with open("datastructures.h", "w") as f:
         p_list = []
         s_list = []
@@ -275,9 +394,9 @@ def generate_partitioned_structs(struct_name_base, members, start, end, contiguo
     write_benchmarks(p_list[start:], contiguous)
 
 
-def generate_test_partitions():
+def write_test_partitions():
     """
-    Partitions used in test.cpp
+    Generate test partitioned data structures used in the unit tests in test.cpp and write them to test.h.
     """
     struct_name_base = "S"
     members = [("int", "x"), ("double", "y"), ("float", "z"), ("char", "w")]
@@ -313,9 +432,10 @@ def generate_test_partitions():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_size', type=int, help="Set output directory", default=-1)
-    parser.add_argument('--batch_num', type=int, help='Set input file(s)', default=0)
-    parser.add_argument('--contiguous', action=argparse.BooleanOptionalAction, default=True, help='Generate contiguous partitioned structures')
+    parser.add_argument('--batch_size', type=int, help="Set batch size for partition generation", default=-1)
+    parser.add_argument('--batch_num', type=int, help='Set current batch number for partition generation', default=0)
+    parser.add_argument('--contiguous', action=argparse.BooleanOptionalAction, default=True,
+                        help='Generate contiguous partitioned structures')
     args = parser.parse_args()
 
     if args.batch_size == -1:
@@ -337,5 +457,5 @@ if __name__ == "__main__":
 
     struct_name_base = "Particle"
 
-    generate_partitioned_structs(struct_name_base, data_members, start, end, args.contiguous)
-    generate_test_partitions()
+    write_partitioned_structs(struct_name_base, data_members, start, end, args.contiguous)
+    write_test_partitions()
