@@ -178,7 +178,7 @@ def convert_codeword_to_partitions(codeword):
 ##############
 
 
-def generate_partitions(members, contiguous):
+def generate_partitions(members, contiguous, only=None):
     """
     Generates all the ways in which the members can be partitioned into substructures.
     Includes all permutations of members within each partition.
@@ -188,6 +188,7 @@ def generate_partitions(members, contiguous):
 
     :param members: List of tuples (data_type, member_name) containing all members in the original structure
     :param contiguous: Whether to generate only contiguous partitions. If True, also permutes the order of partitions.
+    :param only: List of codewords to only generate specific partitions
     Yields: List of partitions, each a list of member indices
     """
 
@@ -201,35 +202,45 @@ def generate_partitions(members, contiguous):
         else:
             yield partition
 
-    r = 0
-    n = len(members)
-    codeword = np.repeat(1, n + 1)
-    n1 = n - 1
-    g = np.repeat(1, n + 1)
-    while r != 1:
-        while r < n1:
-            r += 1
-            codeword[r] = 1
-            g[r] = g[r - 1]
+    if only:
+        for partition_string in only:
+            try:
+                partition = [
+                    [int(o) for o in subset] for subset in partition_string.split("_")
+                ]
+                yield partition
+            except Exception as e:
+                print(f"Error parsing partition string '{partition_string}': {e}")
+    else:
+        r = 0
+        n = len(members)
+        codeword = np.repeat(1, n + 1)
+        n1 = n - 1
+        g = np.repeat(1, n + 1)
+        while r != 1:
+            while r < n1:
+                r += 1
+                codeword[r] = 1
+                g[r] = g[r - 1]
 
-        for j in range(1, g[n1] + 2):
-            codeword[n] = j
-            partition = convert_codeword_to_partitions(codeword[1:])
-            if contiguous:
-                for partition_perm in permutations(partition):
-                    partition_perm = list(partition_perm)
-                    for permuted in permute_elements_in_subset(partition_perm):
+            for j in range(1, g[n1] + 2):
+                codeword[n] = j
+                partition = convert_codeword_to_partitions(codeword[1:])
+                if contiguous:
+                    for partition_perm in permutations(partition):
+                        partition_perm = list(partition_perm)
+                        for permuted in permute_elements_in_subset(partition_perm):
+                            yield permuted
+                else:
+                    for permuted in permute_elements_in_subset(partition):
                         yield permuted
-            else:
-                for permuted in permute_elements_in_subset(partition):
-                    yield permuted
 
-        while codeword[r] > g[r - 1]:
-            r -= 1
+            while codeword[r] > g[r - 1]:
+                r -= 1
 
-        codeword[r] += 1
-        if codeword[r] > g[r]:
-            g[r] = codeword[r]
+            codeword[r] += 1
+            if codeword[r] > g[r]:
+                g[r] = codeword[r]
 
 
 ###########
@@ -411,7 +422,7 @@ def write_benchmarks(p_list, struct_name_base, members, contiguous, generator):
 
 
 def write_partitioned_structs(
-    struct_name_base, members, start, end, contiguous, generator
+    struct_name_base, members, start, end, contiguous, generator, only=None
 ):
     """
     Generate partitioned data structures and write them to datastructures.h.
@@ -423,12 +434,13 @@ def write_partitioned_structs(
     :param end: End index for batching
     :param contiguous: Whether to generate contiguous partitioned structures
     :param generator: 'python' or 'cpp'
+    :param only: List of codewords to only generate specific partitions
     """
     with open("datastructures.h", "w") as f:
         p_list = []
         s_list = []
 
-        for partition in generate_partitions(members, contiguous):
+        for partition in generate_partitions(members, contiguous, only):
             if end and len(p_list) >= end:
                 break
 
@@ -558,7 +570,17 @@ if __name__ == "__main__":
         default="python",
         help="Choose whether partitions are generated using Python or C++ Reflection",
     )
+    parser.add_argument(
+        "--only",
+        type=str,
+        nargs="*",
+        help="Only generate partitions with these codewords (e.g., '01_23')",
+    )
     args = parser.parse_args()
+
+    print(
+        f"Configuration:\n\tbatch_size={args.batch_size}\n\tbatch_num={args.batch_num}\n\tcontiguous={args.contiguous}\n\tgenerator={args.generator}\n\tonly={args.only}"
+    )
 
     if args.batch_size == -1:
         start = 0
@@ -580,6 +602,12 @@ if __name__ == "__main__":
     struct_name_base = "Particle"
 
     write_partitioned_structs(
-        struct_name_base, data_members, start, end, args.contiguous, args.generator
+        struct_name_base,
+        data_members,
+        start,
+        end,
+        args.contiguous,
+        args.generator,
+        args.only,
     )
     write_test_partitions()
