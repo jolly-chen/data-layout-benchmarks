@@ -5,7 +5,6 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import numpy as np
 import argparse
 import os
@@ -233,7 +232,7 @@ def annotate_minmax(ax, df_bp, heights, annotations, aggregate):
     )
 
 
-def annotate_common(ax, df, edges, color, annotations, aggregate):
+def annotate_common(ax, df, edges, annotations, aggregate):
     """
     Annotate the average runtimes of common partitioning schemes (AoS and SoA) in the histogram.
     Parts of the histogram that include AoS layouts with reordered data members are highlighted.
@@ -245,28 +244,21 @@ def annotate_common(ax, df, edges, color, annotations, aggregate):
     :param annotations: List to store the created annotations
     :param aggregate: Metric to aggregate over (min, max, avg)
     """
+    # AoS
     n_members = np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
     aos_string = "".join([str(i) for i in range(n_members)])
     aos_val = df[df["container"].str.contains(aos_string)][aggregate].iloc[0]
     aos_reordered = ["".join(perm) for perm in permutations(aos_string)]
-    common_val = df[df["container"].str.contains("|".join(aos_reordered))][
+    aos_reordered_val = df[df["container"].str.contains("|".join(aos_reordered))][
         aggregate
     ].to_list()
 
-    soa_string = "_".join([str(i) for i in range(n_members)])
-    soa_val = df[df["container"].str.contains(soa_string)][aggregate].iloc[0]
-    common_val.append(soa_val)
-
-    if not df[df["container"].str.contains("Contiguous")].empty:
-        soa_reordered = ["_".join(perm) for perm in permutations(aos_string)]
-        common_val.extend(
-            df[df["container"].str.contains("|".join(soa_reordered))][
-                aggregate
-            ].to_list()
-        )
-
     heights, edges, _ = ax.hist(
-        common_val, bins=edges, color=color, align="left", label="Common Partitions"
+        aos_reordered_val,
+        bins=edges,
+        color="#C00000",
+        align="left",
+        label="AoS (Reordered)",
     )
 
     annotate_partition(
@@ -274,8 +266,27 @@ def annotate_common(ax, df, edges, color, annotations, aggregate):
         aos_val,
         heights[int(np.digitize(aos_val, edges)) - 1],
         f"AoS: {aos_val:.2f}\n({aos_string})",
-        "#EE8F00",
+        "#C00000",
         annotations,
+    )
+
+    # SoA
+    soa_string = "_".join([str(i) for i in range(n_members)])
+    soa_val = df[df["container"].str.contains(soa_string)][aggregate].iloc[0]
+    if not df[df["container"].str.contains("Contiguous")].empty:
+        soa_reordered = ["_".join(perm) for perm in permutations(aos_string)]
+        soa_reordered_val = df[df["container"].str.contains("|".join(soa_reordered))][
+            aggregate
+        ].to_list()
+    else:
+        soa_reordered_val = df[df["container"].str.contains(soa_string)][aggregate]
+
+    heights, edges, _ = ax.hist(
+        soa_reordered_val,
+        bins=edges,
+        color="#EE8F00",
+        align="left",
+        label="SoA (Reordered)",
     )
 
     annotate_partition(
@@ -318,7 +329,7 @@ def plot_runtime_histogram(df, output_dir, aggregate):
                 )
 
                 annotate_minmax(ax, df_bp, heights, annotations, aggregate)
-                annotate_common(ax, df_bp, edges, "#EE8F00", annotations, aggregate)
+                annotate_common(ax, df_bp, edges, annotations, aggregate)
 
                 plt.ylabel("Frequency")
                 plt.yscale("symlog")
