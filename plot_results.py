@@ -91,8 +91,8 @@ def adjust_annotations(ax, annotations):
         coords[ia] = np.array([[xmin, ymin, xmax, ymax]])
 
     for ic, (coord, ann) in enumerate(zip(coords, annotations)):
+        # Shift annotations that are out of bounds to the right inside the axes
         if coord[0] < ax_xmin:
-            # Shift annotations that are out of bounds to the right inside the axes
             update_annotation_positions(
                 annotations,
                 coords,
@@ -243,14 +243,24 @@ def annotate_common(ax, df, edges, color, annotations):
     :param color: Color of the annotation
     :param annotations: List to store the created annotations
     """
-    common_avg = []
-    for perm in permutations("0123456"):
-        common_avg.append(
-            df[df["container"].str.contains("".join(perm))]["avg"].iloc[0]
-        )
+    n_members = np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
+    aos_string = "".join([str(i) for i in range(n_members)])
+    aos_avg = df[df["container"].str.contains(aos_string)]["avg"].iloc[0]
+    aos_reordered = ["".join(perm) for perm in permutations(aos_string)]
+    common_avg = df[df["container"].str.contains("|".join(aos_reordered))][
+        "avg"
+    ].to_list()
 
-    soa_avg = df[df["container"].str.contains("0_1_2_3_4_5_6")]["avg"].iloc[0]
-    common_avg.append(soa_avg)
+    soa_string = "_".join([str(i) for i in range(n_members)])
+    soa_avg = df[df["container"].str.contains(soa_string)]["avg"].iloc[0]
+
+    if not df[df["container"].str.contains("Contiguous")].empty:
+        soa_reordered = ["_".join(perm) for perm in permutations(aos_string)]
+        common_avg.extend(
+            df[df["container"].str.contains("|".join(soa_reordered))]["avg"].to_list()
+        )
+    else:
+        common_avg.append(soa_avg)
 
     heights, edges, _ = ax.hist(
         common_avg, bins=edges, color=color, align="left", label="Common Partitions"
@@ -258,9 +268,9 @@ def annotate_common(ax, df, edges, color, annotations):
 
     annotate_partition(
         ax,
-        common_avg[0],
-        heights[int(np.digitize(common_avg[0], edges)) - 1],
-        f"AoS: {common_avg[0]:.2f}\n(0123456)",
+        aos_avg,
+        heights[int(np.digitize(aos_avg, edges)) - 1],
+        f"AoS: {aos_avg:.2f}\n({aos_string})",
         "#EE8F00",
         annotations,
     )
@@ -269,7 +279,7 @@ def annotate_common(ax, df, edges, color, annotations):
         ax,
         soa_avg,
         heights[int(np.digitize(soa_avg, edges)) - 1],
-        f"SoA: {soa_avg:.2f}\n(0_1_2_3_4_5_6)",
+        f"SoA: {soa_avg:.2f}\n({soa_string})",
         "#EE8F00",
         annotations,
     )
@@ -321,9 +331,11 @@ def plot_runtime_histogram(df, output_dir):
                 adjust_annotations(ax, annotations)
 
             plt.tight_layout()
-            print(f"Saving {file}_{benchmark}_runtime_histogram.pdf...")
+            print(f"Saving {file}_{benchmark}_avg_runtime_histogram.pdf...")
             plt.savefig(
-                os.path.join(output_dir, f"{file}_{benchmark}_runtime_histogram.pdf")
+                os.path.join(
+                    output_dir, f"{file}_{benchmark}_avg_runtime_histogram.pdf"
+                )
             )
 
 
