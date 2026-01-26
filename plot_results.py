@@ -199,7 +199,7 @@ def annotate_partition(ax, x, y, text, color, annotations):
     annotations.append(a)
 
 
-def annotate_minmax(ax, df_bp, heights, annotations):
+def annotate_minmax(ax, df_bp, heights, annotations, aggregate):
     """
     Annotate the minimum and maximum average runtimes in the histogram
     with their corresponding partition.
@@ -208,31 +208,32 @@ def annotate_minmax(ax, df_bp, heights, annotations):
     :param df_bp: DataFrame containing benchmark runtime data
     :param heights: Heights of the histogram bars
     :param annotations: List to store the created annotations
+    :param aggregate: Metric to aggregate over (min, max, avg)
     """
-    max_avg = df_bp["avg"].max()
-    max_partition = df_bp[df_bp["avg"] == max_avg]["container"].iloc[0]
+    max_val = df_bp[aggregate].max()
+    max_partition = df_bp[df_bp[aggregate] == max_val]["container"].iloc[0]
     annotate_partition(
         ax,
-        max_avg,
+        max_val,
         heights[-1],
-        f"Max: {max_avg:.2f}\n({''.join(filter(lambda x: not x.isalpha(), max_partition))})",
+        f"Max: {max_val:.2f}\n({''.join(filter(lambda x: not x.isalpha(), max_partition))})",
         "k",
         annotations,
     )
 
-    min_avg = df_bp["avg"].min()
-    min_partition = df_bp[df_bp["avg"] == min_avg]["container"].iloc[0]
+    min_val = df_bp[aggregate].min()
+    min_partition = df_bp[df_bp[aggregate] == min_val]["container"].iloc[0]
     annotate_partition(
         ax,
-        min_avg,
+        min_val,
         heights[0],
-        f"Min: {min_avg:.2f}\n({''.join(filter(lambda x: not x.isalpha(), min_partition))})",
+        f"Min: {min_val:.2f}\n({''.join(filter(lambda x: not x.isalpha(), min_partition))})",
         "k",
         annotations,
     )
 
 
-def annotate_common(ax, df, edges, color, annotations):
+def annotate_common(ax, df, edges, color, annotations, aggregate):
     """
     Annotate the average runtimes of common partitioning schemes (AoS and SoA) in the histogram.
     Parts of the histogram that include AoS layouts with reordered data members are highlighted.
@@ -242,50 +243,52 @@ def annotate_common(ax, df, edges, color, annotations):
     :param edges: Edges of the histogram bins
     :param color: Color of the annotation
     :param annotations: List to store the created annotations
+    :param aggregate: Metric to aggregate over (min, max, avg)
     """
     n_members = np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
     aos_string = "".join([str(i) for i in range(n_members)])
-    aos_avg = df[df["container"].str.contains(aos_string)]["avg"].iloc[0]
+    aos_val = df[df["container"].str.contains(aos_string)][aggregate].iloc[0]
     aos_reordered = ["".join(perm) for perm in permutations(aos_string)]
-    common_avg = df[df["container"].str.contains("|".join(aos_reordered))][
-        "avg"
+    common_val = df[df["container"].str.contains("|".join(aos_reordered))][
+        aggregate
     ].to_list()
 
     soa_string = "_".join([str(i) for i in range(n_members)])
-    soa_avg = df[df["container"].str.contains(soa_string)]["avg"].iloc[0]
+    soa_val = df[df["container"].str.contains(soa_string)][aggregate].iloc[0]
+    common_val.append(soa_val)
 
     if not df[df["container"].str.contains("Contiguous")].empty:
         soa_reordered = ["_".join(perm) for perm in permutations(aos_string)]
-        common_avg.extend(
-            df[df["container"].str.contains("|".join(soa_reordered))]["avg"].to_list()
+        common_val.extend(
+            df[df["container"].str.contains("|".join(soa_reordered))][
+                aggregate
+            ].to_list()
         )
-    else:
-        common_avg.append(soa_avg)
 
     heights, edges, _ = ax.hist(
-        common_avg, bins=edges, color=color, align="left", label="Common Partitions"
+        common_val, bins=edges, color=color, align="left", label="Common Partitions"
     )
 
     annotate_partition(
         ax,
-        aos_avg,
-        heights[int(np.digitize(aos_avg, edges)) - 1],
-        f"AoS: {aos_avg:.2f}\n({aos_string})",
+        aos_val,
+        heights[int(np.digitize(aos_val, edges)) - 1],
+        f"AoS: {aos_val:.2f}\n({aos_string})",
         "#EE8F00",
         annotations,
     )
 
     annotate_partition(
         ax,
-        soa_avg,
-        heights[int(np.digitize(soa_avg, edges)) - 1],
-        f"SoA: {soa_avg:.2f}\n({soa_string})",
+        soa_val,
+        heights[int(np.digitize(soa_val, edges)) - 1],
+        f"SoA: {soa_val:.2f}\n({soa_string})",
         "#EE8F00",
         annotations,
     )
 
 
-def plot_runtime_histogram(df, output_dir):
+def plot_runtime_histogram(df, output_dir, aggregate):
     """
     Plot runtime histograms for each benchmark and problem size.
 
@@ -307,15 +310,15 @@ def plot_runtime_histogram(df, output_dir):
                     & (df["problem_size"] == problem_size)
                 ]
                 heights, edges, _ = plt.hist(
-                    df_bp["avg"],
+                    df_bp[aggregate],
                     bins="auto",
                     color="#164588",
                     align="left",
                     label="All Partitions",
                 )
 
-                annotate_minmax(ax, df_bp, heights, annotations)
-                annotate_common(ax, df_bp, edges, "#EE8F00", annotations)
+                annotate_minmax(ax, df_bp, heights, annotations, aggregate)
+                annotate_common(ax, df_bp, edges, "#EE8F00", annotations, aggregate)
 
                 plt.ylabel("Frequency")
                 plt.yscale("symlog")
@@ -331,10 +334,10 @@ def plot_runtime_histogram(df, output_dir):
                 adjust_annotations(ax, annotations)
 
             plt.tight_layout()
-            print(f"Saving {file}_{benchmark}_avg_runtime_histogram.pdf...")
+            print(f"Saving {file}_{benchmark}_{aggregate}_runtime_histogram.pdf...")
             plt.savefig(
                 os.path.join(
-                    output_dir, f"{file}_{benchmark}_avg_runtime_histogram.pdf"
+                    output_dir, f"{file}_{benchmark}_{aggregate}_runtime_histogram.pdf"
                 )
             )
 
@@ -352,7 +355,15 @@ if __name__ == "__main__":
         help="<Required> Set input file(s)",
         required=True,
     )
+    parser.add_argument(
+        "-a",
+        "--aggregate",
+        type=str,
+        help="Which metric to aggregate over (min, max, avg)",
+        choices=["min", "max", "avg"],
+        default="avg",
+    )
     args = parser.parse_args()
 
     data = read_data(args.input)
-    plot_runtime_histogram(data, args.output)
+    plot_runtime_histogram(data, args.output, args.aggregate)
