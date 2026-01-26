@@ -132,7 +132,7 @@ inline void DeltaR2Pairwise(const T &v1, const T &v2, std::span<double> results)
   size_t idx = 0;
 
   for (size_t i = 0; i < std::min(deltar2_max_outer_size, n); i++) {
-    for (size_t j = i; j < n; j++) {
+    for (size_t j = i + 1; j < n; j++) {
       results[idx] = DeltaR2(v1[i].eta, v1[i].phi, v2[j].eta, v2[j].phi);
       idx = (idx + 1) % results.size();
     }

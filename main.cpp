@@ -20,10 +20,12 @@
 using Clock = std::chrono::high_resolution_clock;
 using unit = std::milli;
 
-size_t max_results_size = 65536; // 2^16
+// 2^16, maximum number of results to store to cap memory usage.
+size_t max_results_size = 65536;
 
-std::vector<Particle> data;
+std::vector<Particle> input_data; // Cache for input data
 
+/* Convert a time unit type to its string representation. */
 template <typename Unit> std::string unit_to_string() {
   if constexpr (std::same_as<Unit, std::nano>) {
     return "ns";
@@ -38,61 +40,136 @@ template <typename Unit> std::string unit_to_string() {
   }
 }
 
+// Global options parsed from the command line.
 struct FileOpts {
-  std::string input = "";  // Option "--input <string>"
-  std::string output = ""; // Option "--output <string>"
-  int repetitions = 5;     // Option "--repetitions <int>"
+  std::string input = "";      // Option "--input <string>"
+  std::string output = "";     // Option "--output <string>"
+  std::string validation = ""; // Option "--validation <string>"
+  int repetitions = 5;         // Option "--repetitions <int>"
 };
-
-/* */
-struct ValidationFiles;
-consteval {
-  std::vector<std::meta::info> specs;
-  auto benchmarks = members_of(^^kernels, std::meta::access_context::current());
-  for (auto b : benchmarks) {
-    specs.push_back(
-        data_member_spec(^^std::string, {
-                                            .name = identifier_of(b)}));
-  }
-  define_aggregate(^^ValidationFiles, specs);
-}
-
 FileOpts opts;
-ValidationFiles validation; // Files for validation
+
+// Information for validation of benchmark results
+struct ValidationInfo {
+  std::string benchmark_name;
+  size_t input_size;
+  size_t max_results_size;
+  std::string validation_file;
+};
+std::vector<ValidationInfo> validation_data;
+
+// Output stream for benchmark results. Can be std::cout or a file.
 std::ostream *output;
 
-/* Get the data member of validation that corresponds to the given benchmark
- * name */
-consteval inline std::meta::info
-GetValidationFileByName(std::string_view name) {
-  for (const auto v : nonstatic_data_members_of(
-           ^^ValidationFiles, std::meta::access_context::current())) {
-    if (identifier_of(v) == name) {
-      return v;
+/* Read Lorentzvector (pt, eta, phi, e) data from the given CSV file into
+ * the container. */
+void ReadData(std::string filename, size_t n) {
+  input_data.resize(n);
+
+  std::ifstream is(filename);
+  if (is.is_open()) {
+    std::string line;
+    for (size_t i = 0; i < n; ++i) {
+      if (!getline(is, line)) {
+        throw std::runtime_error("Not enough data in file " + filename +
+                                 " for requested size " + std::to_string(n));
+        break;
+      }
+
+      std::stringstream ss(line);
+      std::string token;
+      std::vector<std::string> temp;
+
+      getline(ss, token, ',');
+      input_data[i].pt = std::stod(token);
+      getline(ss, token, ',');
+      input_data[i].eta = std::stod(token);
+      getline(ss, token, ',');
+      input_data[i].phi = std::stod(token);
+      getline(ss, token, ',');
+      input_data[i].e = std::stod(token);
     }
+    is.close();
+  } else {
+    throw std::runtime_error("Failed to open file " + filename +
+                             " for reading");
   }
 }
 
-/* Get the name of the container type as a string. */
-template <typename T>
-std::string GetContainerName() {
-  if constexpr(has_identifier(^^T)) {
-    return std::string(identifier_of(^^T));
+/* Parse validation info from the given CSV file. */
+void ParseValidationInfo(std::string filename) {
+  std::ifstream is(filename);
+  if (is.is_open()) {
+    std::string line;
+    while (getline(is, line)) {
+      std::stringstream ss(line);
+      std::string token;
+      ValidationInfo info;
+
+      getline(ss, token, ',');
+      info.benchmark_name = token;
+      getline(ss, token, ',');
+      info.input_size = std::stoul(token);
+      getline(ss, token, ',');
+      info.max_results_size = std::stoul(token);
+      getline(ss, token, ',');
+      info.validation_file = token;
+
+      validation_data.push_back(info);
+    }
+    is.close();
   } else {
-    return T::to_string();
+    throw std::runtime_error("Failed to open validation file " + filename +
+                             " for reading");
   }
+}
+
+/* Read validation data from the given file into the container. */
+std::vector<double> ReadValidationData(std::string filename) {
+  std::vector<double> data;
+
+  std::ifstream is(filename);
+  if (is.is_open()) {
+    std::string line;
+    while (getline(is, line)) {
+      data.push_back(std::stod(line));
+    }
+  } else {
+    throw std::runtime_error("Failed to open file " + filename +
+                             " for reading");
+  }
+
+  return data;
 }
 
 /* Parse command-line options.
    Taken from
    https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2996r13.html#parsing-command-line-options
  */
-void parse_options(std::span<std::string_view const> args) {
+void ParseOptions(std::span<std::string_view const> args) {
+  if (std::ranges::find(args, "--help") != args.end()) {
+    std::cout
+        << "Usage: ./main [-h] [--input INPUT_FILE] [--output OUTPUT_FILE]\n"
+        << "              [--validation VALIDATION_FILE] [--repetitions REPS]\n"
+        << "options:\n"
+        << "  --help                          Show this help message and exit\n"
+        << "  --input INPUT_FILE              File containing input data\n"
+        << "  --output OUTPUT_FILE            File to write results to\n"
+        << "  --validation VALIDATION_FILE    File containing the benchmark "
+           "name, input size, max results size, and\n"
+        << "                                  name of the file with data to "
+           "use for validation, separated by commas\n"
+        << "                                  and one benchmark per line\n"
+        << "  --repetitions REPS              Number of times to repeat each "
+           "benchmark\n";
+    std::exit(EXIT_SUCCESS);
+  }
+
   // Parse benchmark configuration options
   constexpr auto ctx = std::meta::access_context::current();
   template for (constexpr auto dm : define_static_array(
                     nonstatic_data_members_of(^^FileOpts, ctx))) {
-    auto it = std::find_if(args.begin(), args.end(), [](std::string_view arg) {
+    auto it = std::ranges::find_if(args, [](std::string_view arg) {
       return arg.starts_with("--") && arg.substr(2) == identifier_of(dm);
     });
 
@@ -112,68 +189,9 @@ void parse_options(std::span<std::string_view const> args) {
       std::exit(EXIT_FAILURE);
     }
   }
-
-  // Parse validation files if provided
-  template for (constexpr auto dm : define_static_array(
-                    nonstatic_data_members_of(^^ValidationFiles, ctx))) {
-    auto it = std::find_if(args.begin(), args.end(), [](std::string_view arg) {
-      return arg.starts_with("--validation_") &&
-             arg.substr(13) == identifier_of(dm);
-    });
-
-    if (it == args.end()) {
-      // no option provided, use default
-      continue;
-    } else if (it + 1 == args.end()) {
-      std::cerr << "Option " << *it << " is missing a value\n";
-      std::exit(EXIT_FAILURE);
-    }
-
-    using T = typename[:type_of(dm):];
-    auto iss = std::stringstream(it[1]);
-    if (iss >> validation.[:dm:]; !iss) {
-      std::cerr << "Failed to parse option " << *it << " into a "
-                << display_string_of(^^T) << '\n';
-      std::exit(EXIT_FAILURE);
-    }
-  }
 }
 
-/* Read Lorentzvector (pt, eta, phi, e) data from the given CSV file into the
- * container. */
-void ReadData(std::string filename, size_t n) {
-  data.resize(n);
-
-  std::ifstream is(filename);
-  if (is.is_open()) {
-    std::string line;
-    for (size_t i = 0; i < n; ++i) {
-      if (!getline(is, line)) {
-        throw std::runtime_error("Not enough data in file " + filename +
-                                 " for requested size " + std::to_string(n));
-        break;
-      }
-
-      std::stringstream ss(line);
-      std::string token;
-      std::vector<std::string> temp;
-
-      getline(ss, token, ',');
-      data[i].pt = std::stod(token);
-      getline(ss, token, ',');
-      data[i].eta = std::stod(token);
-      getline(ss, token, ',');
-      data[i].phi = std::stod(token);
-      getline(ss, token, ',');
-      data[i].e = std::stod(token);
-    }
-    is.close();
-  } else {
-    throw std::runtime_error("Failed to open file " + filename +
-                             " for reading");
-  }
-}
-
+/* Run a single benchmark function on the given container type. */
 template <typename Container, std::meta::info BenchmarkFunc,
           typename... ExtraArgs>
 void RunBenchmark(size_t in_size, size_t alignment, size_t out_size,
@@ -181,45 +199,49 @@ void RunBenchmark(size_t in_size, size_t alignment, size_t out_size,
   std::vector<double> measured_times;
 
   for (int _ = 0; _ < opts.repetitions; ++_) {
+    // Initialize input containers.
     Container v1(in_size, alignment), v2(in_size, alignment);
     for (size_t i = 0; i < in_size; ++i) {
-      v1[i].pt = data[i].pt;
-      v1[i].eta = data[i].eta;
-      v1[i].phi = data[i].phi;
-      v1[i].e = data[i].e;
-      v2[i].pt = data[i].pt;
-      v2[i].eta = data[i].eta;
-      v2[i].phi = data[i].phi;
-      v2[i].e = data[i].e;
+      v1[i].pt = input_data[i].pt;
+      v1[i].eta = input_data[i].eta;
+      v1[i].phi = input_data[i].phi;
+      v1[i].e = input_data[i].e;
+      v2[i].pt = input_data[i].pt;
+      v2[i].eta = input_data[i].eta;
+      v2[i].phi = input_data[i].phi;
+      v2[i].e = input_data[i].e;
     }
 
-    // Cap the results size to avoid excessive memory usage
+    // Cap the results size to avoid excessive memory usage.
     std::vector<double> results(std::min(out_size, max_results_size));
 
-    // Measure time taken by the benchmark function
+    // Measure time taken by the benchmark function.
     auto start = Clock::now();
     [:substitute(BenchmarkFunc, {^^Container}):](v1, v2, results,
                                                  extra_args...);
     auto end = Clock::now();
 
-    // Validate results if a validation file is provided
-    auto validation_file =
-        validation
-            .[:GetValidationFileByName(identifier_of(BenchmarkFunc)):];
-    if (!validation_file.empty()) {
-      std::ifstream val_file(validation_file);
-      if (val_file.is_open()) {
-        std::string line;
-        size_t idx = 0;
+    // Validate results if a validation file is provided.
+    if (!validation_data.empty()) {
+      auto validation_file = std::ranges::find_if(
+          validation_data, [=](const ValidationInfo &info) {
+            return info.benchmark_name == identifier_of(BenchmarkFunc) &&
+                   info.input_size == in_size &&
+                   info.max_results_size == max_results_size;
+          });
 
-        while (getline(val_file, line)) {
-          std::cerr << std::setprecision(20);
-          if (std::fabs(std::stod(line) - results[idx]) > 1e-15) {
-            std::cerr << "Validation failed at index " << idx << ": expected "
-                      << line << ", got " << results[idx] << std::endl;
+      if (validation_file != validation_data.end()) {
+        auto expected_results =
+            ReadValidationData(validation_file->validation_file);
+        for (size_t j = 0; j < results.size(); ++j) {
+          if (std::abs(results[j] - expected_results[j]) > 1e-6) {
+            std::cerr << "\033[1;31mVALIDATION FAILED\033[0m for benchmark "
+                      << identifier_of(BenchmarkFunc) << " with input size "
+                      << in_size << " at index " << j << ": expected "
+                      << expected_results[j] << ", got " << results[j]
+                      << std::endl;
             break;
           }
-          idx++;
         }
       }
     }
@@ -239,10 +261,10 @@ void RunBenchmark(size_t in_size, size_t alignment, size_t out_size,
                               return acc + (t - avg) * (t - avg);
                             }) /
                 measured_times.size());
-  *output << identifier_of(BenchmarkFunc) << "," << GetContainerName<Container>()
-          << "," << in_size << "," << sizeof(Container) << ","
-          << unit_to_string<unit>() << "," << min << "," << max << "," << avg
-          << "," << stddev << std::endl;
+  *output << identifier_of(BenchmarkFunc) << ","
+          << GetContainerName<Container>() << "," << in_size << ","
+          << sizeof(Container) << "," << unit_to_string<unit>() << "," << min
+          << "," << max << "," << avg << "," << stddev << std::endl;
 }
 
 /* Run all benchmarks defined in benchmarks.h. */
@@ -257,12 +279,42 @@ void RunAllBenchmarks(size_t n, size_t alignment) {
   RunBenchmark<Container, ^^kernels::InvariantMassRandom>(n, alignment, n,
                                                           indices);
 
-  RunBenchmark<Container, ^^kernels::DeltaR2Pairwise>(n, alignment, n * n);
+  RunBenchmark<Container, ^^kernels::DeltaR2Pairwise>(n, alignment,
+                                                      round(n * (n - 1) / 2));
 }
 
 int main(int argc, char *argv[]) {
-  parse_options(std::vector<std::string_view>(argv + 1, argv + argc));
+  ParseOptions(std::vector<std::string_view>(argv + 1, argv + argc));
 
+  // Get problem sizes and alignment
+  auto err = topology_init();
+  if (err < 0) {
+    fprintf(stderr, "Failed to initialize LIKWID's topology module\n");
+    return EXIT_FAILURE;
+  }
+  CpuTopology_t topo = get_cpuTopology();
+
+  std::vector<size_t> problem_sizes;
+  problem_sizes.push_back(topo->cacheLevels[0].size / sizeof(Particle) /
+                          3); // Fits in L1 Cache
+  problem_sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size /
+                          sizeof(Particle)); // Does not fit in any cache
+  size_t alignment = topo->cacheLevels[0].lineSize;
+
+  // Get input data
+  if (!opts.input.empty()) {
+    ReadData(opts.input, *std::ranges::max_element(problem_sizes));
+  } else {
+    std::cerr << "No input file specified. Exiting." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  // Read validation data if provided
+  if (!opts.validation.empty()) {
+    ParseValidationInfo(opts.validation);
+  }
+
+  // Determine output stream
   bool write_header = true;
   if (std::filesystem::exists(opts.output)) {
     write_header = false;
@@ -281,24 +333,6 @@ int main(int argc, char *argv[]) {
     *output << "benchmark,container,problem_size,container_byte_size,time_unit,"
                "min,max,avg,stddev\n";
   }
-
-  auto err = topology_init();
-  if (err < 0) {
-    fprintf(stderr, "Failed to initialize LIKWID's topology module\n");
-    return EXIT_FAILURE;
-  }
-  CpuTopology_t topo = get_cpuTopology();
-
-  std::vector<size_t> problem_sizes;
-  // Fits in L1 Cache
-  problem_sizes.push_back(topo->cacheLevels[0].size / sizeof(Particle) / 3);
-  // Does not fit in any cache
-  problem_sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size /
-                          sizeof(Particle));
-
-  ReadData(opts.input, *std::ranges::max_element(problem_sizes));
-
-  size_t alignment = topo->cacheLevels[0].lineSize;
 
   for (size_t n : problem_sizes) {
 		// THIS IS GENERATED USING generate_datastructures.py

@@ -59,6 +59,16 @@ std::string GetSplitOpsString() {
   }(std::make_index_sequence<sizeof...(Ops)>());
 }
 
+/* Get the name of the container type as a string. */
+template <typename T> std::string GetContainerName() {
+  if constexpr (has_identifier(^^T)) {
+    return std::string(identifier_of(^^T));
+  } else {
+    return T::to_string();
+  }
+}
+
+
 consteval auto Mapping(std::vector<std::pair<size_t, size_t>> mapping) {
   return define_static_array(mapping);
 }

@@ -147,11 +147,11 @@ template <typename T> void VerifyAllocation0_1_2_3(const T &p, const std::string
   // xxxx...yyyy...zzzz...wwww...)
   size_t n = p.size();
   auto x_end =
-      reinterpret_cast<char *>(&p[0].x) + align_size(n * sizeof(int), 64);
+      reinterpret_cast<char *>(&p[0].x) + AlignSize(n * sizeof(int), 64);
   auto y_start = reinterpret_cast<char *>(&p[0].y);
-  auto y_end = y_start + align_size(n * sizeof(double), 64);
+  auto y_end = y_start + AlignSize(n * sizeof(double), 64);
   auto z_start = reinterpret_cast<char *>(&p[0].z);
-  auto z_end = z_start + align_size(n * sizeof(float), 64);
+  auto z_end = z_start + AlignSize(n * sizeof(float), 64);
   auto w_start = reinterpret_cast<char *>(&p[0].w);
   if (y_start != x_end || z_start != y_end || w_start != z_end) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
@@ -164,7 +164,7 @@ template <typename T> void VerifyAllocation0_1_2_3(const T &p, const std::string
               << "\t\tz: [" << (long long)z_start << ", " << (long long)z_end
               << "]\n"
               << "\t\tw: [" << (long long)w_start << ", "
-              << (long long)(w_start + align_size(n * sizeof(char), 64))
+              << (long long)(w_start + AlignSize(n * sizeof(char), 64))
               << "]\n";
     failed = true;
   }
