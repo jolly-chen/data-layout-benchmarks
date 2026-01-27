@@ -23,7 +23,8 @@ using unit = std::milli;
 // 2^16, maximum number of results to store to cap memory usage.
 size_t max_results_size = 65536;
 
-std::vector<Particle> input_data; // Cache for input data
+std::vector<Particle> input1_data; // Cache for input1 data
+std::vector<Particle> input2_data; // Cache for input2 data
 
 /* Convert a time unit type to its string representation. */
 template <typename Unit> std::string unit_to_string() {
@@ -42,7 +43,8 @@ template <typename Unit> std::string unit_to_string() {
 
 // Global options parsed from the command line.
 struct FileOpts {
-  std::string input = "";      // Option "--input <string>"
+  std::string input1 = "";     // Option "--input1 <string>"
+  std::string input2 = "";     // Option "--input2 <string>"
   std::string output = "";     // Option "--output <string>"
   std::string validation = ""; // Option "--validation <string>"
   int repetitions = 5;         // Option "--repetitions <int>"
@@ -63,7 +65,7 @@ std::ostream *output;
 
 /* Read Lorentzvector (pt, eta, phi, e) data from the given CSV file into
  * the container. */
-void ReadData(std::string filename, size_t n) {
+void ReadData(std::string filename, size_t n, std::vector<Particle> &input_data) {
   input_data.resize(n);
 
   std::ifstream is(filename);
@@ -142,27 +144,169 @@ std::vector<double> ReadValidationData(std::string filename) {
   return data;
 }
 
+/* Validate results if a validation file is provided. */
+template <std::meta::info BenchmarkFunc>
+void ValidateResults(std::vector<double> &results, size_t in_size) {
+  if (!validation_data.empty()) {
+    auto validation_file =
+        std::ranges::find_if(validation_data, [=](const ValidationInfo &info) {
+          return info.benchmark_name == identifier_of(BenchmarkFunc) &&
+                 info.input_size == in_size &&
+                 info.max_results_size == max_results_size;
+        });
+
+    if (validation_file != validation_data.end()) {
+      auto expected_results =
+          ReadValidationData(validation_file->validation_file);
+      for (size_t j = 0; j < results.size(); ++j) {
+        if (std::abs(results[j] - expected_results[j]) > 1e-6) {
+          std::cerr << "\033[1;31mVALIDATION FAILED\033[0m for benchmark "
+                    << identifier_of(BenchmarkFunc) << " with input1 size "
+                    << in_size << " at index " << j << ": expected "
+                    << expected_results[j] << ", got " << results[j]
+                    << std::endl;
+          break;
+        }
+      }
+    }
+  }
+}
+
+/* Print configuration and timing information in csv format. */
+template <typename Container, std::meta::info BenchmarkFunc>
+void PrintTiming(std::vector<double> &measured_times, size_t in_size) {
+  double min = *std::ranges::min_element(measured_times);
+  double max = *std::ranges::max_element(measured_times);
+  double avg = std::reduce(measured_times.begin(), measured_times.end(), 0.0) /
+               measured_times.size();
+  double stddev =
+      std::sqrt(std::reduce(measured_times.begin(), measured_times.end(), 0.0,
+                            [avg](double acc, double t) {
+                              return acc + (t - avg) * (t - avg);
+                            }) /
+                measured_times.size());
+  *output << identifier_of(BenchmarkFunc) << ","
+          << GetContainerName<Container>() << "," << in_size << ","
+          << sizeof(Container) << "," << unit_to_string<unit>() << "," << min
+          << "," << max << "," << avg << "," << stddev << std::endl;
+}
+
+/* Run a single benchmark function that takes ONE containers of the given
+ * container type.
+ */
+template <typename Container, std::meta::info BenchmarkFunc,
+          typename... ExtraArgs>
+void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
+                   ExtraArgs... extra_args) {
+  std::vector<double> measured_times;
+
+  for (int _ = 0; _ < opts.repetitions; ++_) {
+    // Initialize input1 containers.
+    Container v1(in_size, alignment);
+    for (size_t i = 0; i < in_size; ++i) {
+      v1[i].pt = input1_data[i].pt;
+      v1[i].eta = input1_data[i].eta;
+      v1[i].phi = input1_data[i].phi;
+      v1[i].e = input1_data[i].e;
+    }
+
+    // Cap the results size to avoid excessive memory usage.
+    std::vector<double> results(std::min(out_size, max_results_size));
+
+    // Measure time taken by the benchmark function.
+    auto start = Clock::now();
+    [:substitute(BenchmarkFunc, {^^Container}):](v1, results, extra_args...);
+    auto end = Clock::now();
+
+    ValidateResults<BenchmarkFunc>(results, in_size);
+
+    std::chrono::duration<double, unit> elapsed = end - start;
+    measured_times.push_back(elapsed.count());
+  }
+
+  PrintTiming<Container, BenchmarkFunc>(measured_times, in_size);
+}
+
+/* Run a single benchmark function that takes TWO containers of the given
+ * container type.
+ */
+template <typename Container, std::meta::info BenchmarkFunc,
+          typename... ExtraArgs>
+void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
+                   ExtraArgs... extra_args) {
+  std::vector<double> measured_times;
+
+  for (int _ = 0; _ < opts.repetitions; ++_) {
+    // Initialize input1 containers.
+    Container v1(in_size, alignment), v2(in_size, alignment);
+    for (size_t i = 0; i < in_size; ++i) {
+      v1[i].pt = input1_data[i].pt;
+      v1[i].eta = input1_data[i].eta;
+      v1[i].phi = input1_data[i].phi;
+      v1[i].e = input1_data[i].e;
+      v2[i].pt = input2_data[i].pt;
+      v2[i].eta = input2_data[i].eta;
+      v2[i].phi = input2_data[i].phi;
+      v2[i].e = input2_data[i].e;
+    }
+
+    // Cap the results size to avoid excessive memory usage.
+    std::vector<double> results(std::min(out_size, max_results_size));
+
+    // Measure time taken by the benchmark function.
+    auto start = Clock::now();
+    [:substitute(BenchmarkFunc, {^^Container}):](v1, v2, results,
+                                                 extra_args...);
+    auto end = Clock::now();
+
+    ValidateResults<BenchmarkFunc>(results, in_size);
+
+    std::chrono::duration<double, unit> elapsed = end - start;
+    measured_times.push_back(elapsed.count());
+  }
+
+  PrintTiming<Container, BenchmarkFunc>(measured_times, in_size);
+}
+
+/* Run all benchmarks defined in benchmarks.h. */
+template <typename Container>
+void RunAllBenchmarks(size_t n, size_t alignment) {
+  RunBenchmark2<Container, ^^kernels::InvariantMassSequential>(n, alignment, n);
+
+  std::vector<size_t> indices(n);
+  std::iota(begin(indices), end(indices), 0);
+  std::mt19937 rng(123);
+  std::shuffle(begin(indices), end(indices), rng);
+  RunBenchmark2<Container, ^^kernels::InvariantMassRandom>(n, alignment, n,
+                                                           indices);
+
+  RunBenchmark1<Container, ^^kernels::DeltaR2Pairwise>(n, alignment,
+                                                       round(n * (n - 1) / 2));
+}
+
 /* Parse command-line options.
    Taken from
    https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2996r13.html#parsing-command-line-options
  */
 void ParseOptions(std::span<std::string_view const> args) {
   if (std::ranges::find(args, "--help") != args.end()) {
+    // clang-format off
     std::cout
-        << "Usage: ./main [-h] [--input INPUT_FILE] [--output OUTPUT_FILE]\n"
+        << "Usage: ./main [-h] [--input1 INPUT_FILE] [--input2 INPUT_FILE] "
+           "[--output OUTPUT_FILE]\n"
         << "              [--validation VALIDATION_FILE] [--repetitions REPS]\n"
         << "options:\n"
         << "  --help                          Show this help message and exit\n"
-        << "  --input INPUT_FILE              File containing input data\n"
+        << "  --input1 INPUT_FILE             File containing input1 data\n"
+        << "  --input2 INPUT_FILE             File containing input2 data\n"
         << "  --output OUTPUT_FILE            File to write results to\n"
-        << "  --validation VALIDATION_FILE    File containing the benchmark "
-           "name, input size, max results size, and\n"
-        << "                                  name of the file with data to "
-           "use for validation, separated by commas\n"
+        << "  --validation VALIDATION_FILE    File containing the benchmark name, input1 size, max results size, and\n"
+        << "                                  name of the file with data to use for validation, separated by commas\n"
         << "                                  and one benchmark per line\n"
         << "  --repetitions REPS              Number of times to repeat each "
            "benchmark\n";
-    std::exit(EXIT_SUCCESS);
+		   std::exit(EXIT_SUCCESS);
+    // clang-format on
   }
 
   // Parse benchmark configuration options
@@ -191,98 +335,6 @@ void ParseOptions(std::span<std::string_view const> args) {
   }
 }
 
-/* Run a single benchmark function on the given container type. */
-template <typename Container, std::meta::info BenchmarkFunc,
-          typename... ExtraArgs>
-void RunBenchmark(size_t in_size, size_t alignment, size_t out_size,
-                  ExtraArgs... extra_args) {
-  std::vector<double> measured_times;
-
-  for (int _ = 0; _ < opts.repetitions; ++_) {
-    // Initialize input containers.
-    Container v1(in_size, alignment), v2(in_size, alignment);
-    for (size_t i = 0; i < in_size; ++i) {
-      v1[i].pt = input_data[i].pt;
-      v1[i].eta = input_data[i].eta;
-      v1[i].phi = input_data[i].phi;
-      v1[i].e = input_data[i].e;
-      v2[i].pt = input_data[i].pt;
-      v2[i].eta = input_data[i].eta;
-      v2[i].phi = input_data[i].phi;
-      v2[i].e = input_data[i].e;
-    }
-
-    // Cap the results size to avoid excessive memory usage.
-    std::vector<double> results(std::min(out_size, max_results_size));
-
-    // Measure time taken by the benchmark function.
-    auto start = Clock::now();
-    [:substitute(BenchmarkFunc, {^^Container}):](v1, v2, results,
-                                                 extra_args...);
-    auto end = Clock::now();
-
-    // Validate results if a validation file is provided.
-    if (!validation_data.empty()) {
-      auto validation_file = std::ranges::find_if(
-          validation_data, [=](const ValidationInfo &info) {
-            return info.benchmark_name == identifier_of(BenchmarkFunc) &&
-                   info.input_size == in_size &&
-                   info.max_results_size == max_results_size;
-          });
-
-      if (validation_file != validation_data.end()) {
-        auto expected_results =
-            ReadValidationData(validation_file->validation_file);
-        for (size_t j = 0; j < results.size(); ++j) {
-          if (std::abs(results[j] - expected_results[j]) > 1e-6) {
-            std::cerr << "\033[1;31mVALIDATION FAILED\033[0m for benchmark "
-                      << identifier_of(BenchmarkFunc) << " with input size "
-                      << in_size << " at index " << j << ": expected "
-                      << expected_results[j] << ", got " << results[j]
-                      << std::endl;
-            break;
-          }
-        }
-      }
-    }
-
-    std::chrono::duration<double, unit> elapsed = end - start;
-    measured_times.push_back(elapsed.count());
-  }
-
-  // Print configuration and timing information in csv format
-  double min = *std::ranges::min_element(measured_times);
-  double max = *std::ranges::max_element(measured_times);
-  double avg = std::reduce(measured_times.begin(), measured_times.end(), 0.0) /
-               measured_times.size();
-  double stddev =
-      std::sqrt(std::reduce(measured_times.begin(), measured_times.end(), 0.0,
-                            [avg](double acc, double t) {
-                              return acc + (t - avg) * (t - avg);
-                            }) /
-                measured_times.size());
-  *output << identifier_of(BenchmarkFunc) << ","
-          << GetContainerName<Container>() << "," << in_size << ","
-          << sizeof(Container) << "," << unit_to_string<unit>() << "," << min
-          << "," << max << "," << avg << "," << stddev << std::endl;
-}
-
-/* Run all benchmarks defined in benchmarks.h. */
-template <typename Container>
-void RunAllBenchmarks(size_t n, size_t alignment) {
-  RunBenchmark<Container, ^^kernels::InvariantMassSequential>(n, alignment, n);
-
-  std::vector<size_t> indices(n);
-  std::iota(begin(indices), end(indices), 0);
-  std::mt19937 rng(123);
-  std::shuffle(begin(indices), end(indices), rng);
-  RunBenchmark<Container, ^^kernels::InvariantMassRandom>(n, alignment, n,
-                                                          indices);
-
-  RunBenchmark<Container, ^^kernels::DeltaR2Pairwise>(n, alignment,
-                                                      round(n * (n - 1) / 2));
-}
-
 int main(int argc, char *argv[]) {
   ParseOptions(std::vector<std::string_view>(argv + 1, argv + argc));
 
@@ -301,11 +353,19 @@ int main(int argc, char *argv[]) {
                           sizeof(Particle)); // Does not fit in any cache
   size_t alignment = topo->cacheLevels[0].lineSize;
 
-  // Get input data
-  if (!opts.input.empty()) {
-    ReadData(opts.input, *std::ranges::max_element(problem_sizes));
+  // Get input1 data
+  if (!opts.input1.empty()) {
+    ReadData(opts.input1, *std::ranges::max_element(problem_sizes), input1_data);
   } else {
-    std::cerr << "No input file specified. Exiting." << std::endl;
+    std::cerr << "No input1 file specified. Exiting." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  // Get input2 data
+  if (!opts.input2.empty()) {
+    ReadData(opts.input2, *std::ranges::max_element(problem_sizes), input2_data);
+  } else {
+    std::cerr << "No input2 file specified. Exiting." << std::endl;
     return EXIT_FAILURE;
   }
 

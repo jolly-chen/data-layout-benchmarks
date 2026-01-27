@@ -127,13 +127,13 @@ inline void InvariantMassRandom(const T &v1, const T &v2,
 constexpr size_t deltar2_max_outer_size = 128;
 
 template <typename T>
-inline void DeltaR2Pairwise(const T &v1, const T &v2, std::span<double> results) {
-  const size_t n = v1.size();
+inline void DeltaR2Pairwise(const T &v, std::span<double> results) {
+  const size_t n = v.size();
   size_t idx = 0;
 
   for (size_t i = 0; i < std::min(deltar2_max_outer_size, n); i++) {
     for (size_t j = i + 1; j < n; j++) {
-      results[idx] = DeltaR2(v1[i].eta, v1[i].phi, v2[j].eta, v2[j].phi);
+      results[idx] = DeltaR2(v[i].eta, v[i].phi, v[j].eta, v[j].phi);
       idx = (idx + 1) % results.size();
     }
   }
