@@ -295,7 +295,7 @@ def annotate_common(ax, df, edges, annotations, aggregate):
         aos_reordered_val,
         bins=edges,
         color="#C00000",
-        align="left",
+        align="mid",
         label="AoS (Reordered)",
     )
 
@@ -325,7 +325,7 @@ def annotate_common(ax, df, edges, annotations, aggregate):
         soa_reordered_val,
         bins=edges,
         color="#EE8F00",
-        align="left",
+        align="mid",
         label="SoA (Reordered)",
     )
 
@@ -365,7 +365,7 @@ def plot_runtime_histogram(df, output_dir, aggregate):
                     get_agg_value(df_bp, aggregate),
                     bins="auto",
                     color="#164588",
-                    align="left",
+                    align="mid",
                     label="All Partitions",
                 )
 
