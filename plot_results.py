@@ -27,6 +27,45 @@ def read_data(files):
     return dataframes
 
 
+def get_agg_value(df, aggregate):
+    """
+    Get the aggregated value from the DataFrame based on the specified aggregate metric.
+
+    :param df: DataFrame containing benchmark runtime data
+    :param aggregate: Metric to aggregate over (min, max, avg)
+    :return: Aggregated value
+    """
+    if "time" in df.columns:
+        vals = df.groupby("container")["time"]
+        if aggregate == "min":
+            return vals.min()
+        elif aggregate == "max":
+            return vals.max()
+        elif aggregate == "avg":
+            return vals.mean()
+        else:
+            raise ValueError(f"Unknown aggregate metric: {aggregate}")
+    else:
+        return df[aggregate]
+
+
+def get_partition_from_val(df, val, aggregate):
+    """
+    Get the partition corresponding to a given aggregated value.
+
+    :param df: DataFrame containing benchmark runtime data
+    :param val: Aggregated value
+    :param aggregate: Metric to aggregate over (min, max, avg)
+    :return: Partition string
+    """
+    if "time" in df.columns:
+        df_grouped = df.groupby("container")["time"].mean()
+        partition = df_grouped[df_grouped == val].index[0]
+    else:
+        partition = df[df[aggregate] == val]["container"].iloc[0]
+
+    return partition
+
 def is_overlapping_2D(xmin1, ymin1, xmax1, ymax1, xmin2, ymin2, xmax2, ymax2):
     """
     Check if two 2D intervals overlap.
@@ -209,8 +248,8 @@ def annotate_minmax(ax, df_bp, heights, annotations, aggregate):
     :param annotations: List to store the created annotations
     :param aggregate: Metric to aggregate over (min, max, avg)
     """
-    max_val = df_bp[aggregate].max()
-    max_partition = df_bp[df_bp[aggregate] == max_val]["container"].iloc[0]
+    max_val = get_agg_value(df_bp, aggregate).max()
+    max_partition = get_partition_from_val(df_bp, max_val, aggregate)
     annotate_partition(
         ax,
         max_val,
@@ -220,8 +259,8 @@ def annotate_minmax(ax, df_bp, heights, annotations, aggregate):
         annotations,
     )
 
-    min_val = df_bp[aggregate].min()
-    min_partition = df_bp[df_bp[aggregate] == min_val]["container"].iloc[0]
+    min_val = get_agg_value(df_bp, aggregate).min()
+    min_partition = get_partition_from_val(df_bp, min_val, aggregate)
     annotate_partition(
         ax,
         min_val,
@@ -247,11 +286,10 @@ def annotate_common(ax, df, edges, annotations, aggregate):
     # AoS
     n_members = np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
     aos_string = "".join([str(i) for i in range(n_members)])
-    aos_val = df[df["container"].str.contains(aos_string)][aggregate].iloc[0]
     aos_reordered = ["".join(perm) for perm in permutations(aos_string)]
-    aos_reordered_val = df[df["container"].str.contains("|".join(aos_reordered))][
-        aggregate
-    ].to_list()
+    aos_reordered_val = get_agg_value(
+        df[df["container"].str.contains("|".join(aos_reordered))], aggregate
+    )
 
     heights, edges, _ = ax.hist(
         aos_reordered_val,
@@ -261,6 +299,7 @@ def annotate_common(ax, df, edges, annotations, aggregate):
         label="AoS (Reordered)",
     )
 
+    aos_val = get_agg_value(df[df["container"].str.contains(aos_string)], aggregate).iloc[0]
     annotate_partition(
         ax,
         aos_val,
@@ -272,14 +311,15 @@ def annotate_common(ax, df, edges, annotations, aggregate):
 
     # SoA
     soa_string = "_".join([str(i) for i in range(n_members)])
-    soa_val = df[df["container"].str.contains(soa_string)][aggregate].iloc[0]
     if not df[df["container"].str.contains("Contiguous")].empty:
         soa_reordered = ["_".join(perm) for perm in permutations(aos_string)]
-        soa_reordered_val = df[df["container"].str.contains("|".join(soa_reordered))][
-            aggregate
-        ].to_list()
+        soa_reordered_val = get_agg_value(
+            df[df["container"].str.contains("|".join(soa_reordered))], aggregate
+        )
     else:
-        soa_reordered_val = df[df["container"].str.contains(soa_string)][aggregate]
+        soa_reordered_val = get_agg_value(
+            df[df["container"].str.contains(soa_string)], aggregate
+        )
 
     heights, edges, _ = ax.hist(
         soa_reordered_val,
@@ -289,6 +329,7 @@ def annotate_common(ax, df, edges, annotations, aggregate):
         label="SoA (Reordered)",
     )
 
+    soa_val = get_agg_value(df[df["container"].str.contains(soa_string)], aggregate).iloc[0]
     annotate_partition(
         ax,
         soa_val,
@@ -321,7 +362,7 @@ def plot_runtime_histogram(df, output_dir, aggregate):
                     & (df["problem_size"] == problem_size)
                 ]
                 heights, edges, _ = plt.hist(
-                    df_bp[aggregate],
+                    get_agg_value(df_bp, aggregate),
                     bins="auto",
                     color="#164588",
                     align="left",
