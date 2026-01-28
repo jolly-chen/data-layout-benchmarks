@@ -47,6 +47,7 @@ struct FileOpts {
   std::string input2 = "";     // Option "--input2 <string>"
   std::string output = "";     // Option "--output <string>"
   std::string validation = ""; // Option "--validation <string>"
+  bool aggregate = false;      // Option "--aggregate <bool>"
   int repetitions = 5;         // Option "--repetitions <int>"
 };
 FileOpts opts;
@@ -65,7 +66,8 @@ std::ostream *output;
 
 /* Read Lorentzvector (pt, eta, phi, e) data from the given CSV file into
  * the container. */
-void ReadData(std::string filename, size_t n, std::vector<Particle> &input_data) {
+void ReadData(std::string filename, size_t n,
+              std::vector<Particle> &input_data) {
   input_data.resize(n);
 
   std::ifstream is(filename);
@@ -175,20 +177,30 @@ void ValidateResults(std::vector<double> &results, size_t in_size) {
 /* Print configuration and timing information in csv format. */
 template <typename Container, std::meta::info BenchmarkFunc>
 void PrintTiming(std::vector<double> &measured_times, size_t in_size) {
-  double min = *std::ranges::min_element(measured_times);
-  double max = *std::ranges::max_element(measured_times);
-  double avg = std::reduce(measured_times.begin(), measured_times.end(), 0.0) /
-               measured_times.size();
-  double stddev =
-      std::sqrt(std::reduce(measured_times.begin(), measured_times.end(), 0.0,
-                            [avg](double acc, double t) {
-                              return acc + (t - avg) * (t - avg);
-                            }) /
-                measured_times.size());
-  *output << identifier_of(BenchmarkFunc) << ","
-          << GetContainerName<Container>() << "," << in_size << ","
-          << sizeof(Container) << "," << unit_to_string<unit>() << "," << min
-          << "," << max << "," << avg << "," << stddev << std::endl;
+  if (opts.aggregate) {
+    double min = *std::ranges::min_element(measured_times);
+    double max = *std::ranges::max_element(measured_times);
+    double avg =
+        std::reduce(measured_times.begin(), measured_times.end(), 0.0) /
+        measured_times.size();
+    double stddev =
+        std::sqrt(std::reduce(measured_times.begin(), measured_times.end(), 0.0,
+                              [avg](double acc, double t) {
+                                return acc + (t - avg) * (t - avg);
+                              }) /
+                  measured_times.size());
+    *output << identifier_of(BenchmarkFunc) << ","
+            << GetContainerName<Container>() << "," << in_size << ","
+            << sizeof(Container) << "," << unit_to_string<unit>() << "," << min
+            << "," << max << "," << avg << "," << stddev << std::endl;
+  } else {
+    for (auto time : measured_times) {
+      *output << identifier_of(BenchmarkFunc) << ","
+              << GetContainerName<Container>() << "," << in_size << ","
+              << sizeof(Container) << "," << unit_to_string<unit>() << ","
+              << time << std::endl;
+    }
+  }
 }
 
 /* Run a single benchmark function that takes ONE containers of the given
@@ -303,8 +315,8 @@ void ParseOptions(std::span<std::string_view const> args) {
         << "  --validation VALIDATION_FILE    File containing the benchmark name, input1 size, max results size, and\n"
         << "                                  name of the file with data to use for validation, separated by commas\n"
         << "                                  and one benchmark per line\n"
-        << "  --repetitions REPS              Number of times to repeat each "
-           "benchmark\n";
+        << "  --aggreagte {true|false}        Print aggregate results or each repetition\n"
+        << "  --repetitions REPS              Number of times to repeat each benchmark\n";
 		   std::exit(EXIT_SUCCESS);
     // clang-format on
   }
@@ -355,7 +367,8 @@ int main(int argc, char *argv[]) {
 
   // Get input1 data
   if (!opts.input1.empty()) {
-    ReadData(opts.input1, *std::ranges::max_element(problem_sizes), input1_data);
+    ReadData(opts.input1, *std::ranges::max_element(problem_sizes),
+             input1_data);
   } else {
     std::cerr << "No input1 file specified. Exiting." << std::endl;
     return EXIT_FAILURE;
@@ -363,7 +376,8 @@ int main(int argc, char *argv[]) {
 
   // Get input2 data
   if (!opts.input2.empty()) {
-    ReadData(opts.input2, *std::ranges::max_element(problem_sizes), input2_data);
+    ReadData(opts.input2, *std::ranges::max_element(problem_sizes),
+             input2_data);
   } else {
     std::cerr << "No input2 file specified. Exiting." << std::endl;
     return EXIT_FAILURE;
@@ -389,9 +403,13 @@ int main(int argc, char *argv[]) {
   }
 
   if (write_header) {
-    // Write header for CSV if the output file does not already exist.
-    *output << "benchmark,container,problem_size,container_byte_size,time_unit,"
-               "min,max,avg,stddev\n";
+    if (opts.aggregate) {
+      // Write header for CSV if the output file does not already exist.
+      *output << "benchmark,container,problem_size,container_byte_size,time_unit,"
+                "min,max,avg,stddev\n";
+    } else {
+      *output << "benchmark,container,problem_size,container_byte_size,time_unit,time\n";
+    }
   }
 
   for (size_t n : problem_sizes) {
