@@ -43,6 +43,8 @@ def get_agg_value(df, aggregate):
             return vals.max()
         elif aggregate == "avg":
             return vals.mean()
+        elif aggregate == "stddev":
+            return vals.std()
         else:
             raise ValueError(f"Unknown aggregate metric: {aggregate}")
     else:
@@ -65,6 +67,7 @@ def get_partition_from_val(df, val, aggregate):
         partition = df[df[aggregate] == val]["container"].iloc[0]
 
     return partition
+
 
 def is_overlapping_2D(xmin1, ymin1, xmax1, ymax1, xmin2, ymin2, xmax2, ymax2):
     """
@@ -299,15 +302,16 @@ def annotate_common(ax, df, edges, annotations, aggregate):
         label="AoS (Reordered)",
     )
 
-    aos_val = get_agg_value(df[df["container"].str.contains(aos_string)], aggregate).iloc[0]
-    annotate_partition(
-        ax,
-        aos_val,
-        heights[int(np.digitize(aos_val, edges)) - 1],
-        f"AoS: {aos_val:.2f}\n({aos_string})",
-        "#C00000",
-        annotations,
-    )
+    aos_val = get_agg_value(df[df["container"].str.contains(aos_string)], aggregate)
+    if not aos_val.empty:
+        annotate_partition(
+            ax,
+            aos_val.iloc[0],
+            heights[int(np.digitize(aos_val.iloc[0], edges)) - 1],
+            f"AoS: {aos_val.iloc[0]:.2f}\n({aos_string})",
+            "#C00000",
+            annotations,
+        )
 
     # SoA
     soa_string = "_".join([str(i) for i in range(n_members)])
@@ -329,15 +333,16 @@ def annotate_common(ax, df, edges, annotations, aggregate):
         label="SoA (Reordered)",
     )
 
-    soa_val = get_agg_value(df[df["container"].str.contains(soa_string)], aggregate).iloc[0]
-    annotate_partition(
-        ax,
-        soa_val,
-        heights[int(np.digitize(soa_val, edges)) - 1],
-        f"SoA: {soa_val:.2f}\n({soa_string})",
-        "#EE8F00",
-        annotations,
-    )
+    soa_val = get_agg_value(df[df["container"].str.contains(soa_string)], aggregate)
+    if not soa_val.empty:
+        annotate_partition(
+            ax,
+            soa_val.iloc[0],
+            heights[int(np.digitize(soa_val.iloc[0], edges)) - 1],
+            f"SoA: {soa_val.iloc[0]:.2f}\n({soa_string})",
+            "#EE8F00",
+            annotations,
+        )
 
 
 def plot_runtime_histogram(df, output_dir, aggregate):
@@ -394,6 +399,127 @@ def plot_runtime_histogram(df, output_dir, aggregate):
             )
 
 
+def plot_runtime_barplot(df, output_dir, aggregate):
+    """
+    Plot runtime barplots for each benchmark and problem size.
+
+    :param df: Dictionary of DataFrames keyed by file name
+    :param output_dir: Directory to save the output plots
+    """
+    for file, df in df.items():
+        for benchmark in df["benchmark"].unique():
+            plt.figure(figsize=(50, 6 * len(df["problem_size"].unique())))
+            plt.suptitle(f"Runtime Barplot of {benchmark}")
+
+            for pi, problem_size in enumerate(df["problem_size"].unique()):
+                ax = plt.subplot(len(df["problem_size"].unique()), 1, pi + 1)
+                plt.title(f"Problem Size: {problem_size}")
+
+                df_bp = df[
+                    (df["benchmark"] == benchmark)
+                    & (df["problem_size"] == problem_size)
+                ]
+
+                sorted_indices = np.argsort(get_agg_value(df_bp, "avg"))
+                sorted_runtimes = np.array(get_agg_value(df_bp, "avg").iloc[sorted_indices])
+                sorted_stddev = np.array(get_agg_value(df_bp, "stddev").iloc[sorted_indices])
+                sorted_containers = (
+                    df_bp.groupby("container")["time"].mean().index[sorted_indices]
+                    if "time" in df.columns
+                    else df_bp["container"].iloc[sorted_indices]
+                )
+                sorted_containers = np.array([
+                    (
+                        c.replace("PartitionedContiguousContainer", "")
+                        if "Contiguous" in c
+                        else c.replace("PartitionedContainer", "")
+                    )
+                    for c in sorted_containers
+                ])
+
+                # Plot barplot of all partitions
+                ax.bar(
+                    sorted_containers,
+                    sorted_runtimes,
+                    yerr=sorted_stddev if len(sorted_runtimes) < 1000 else None,
+                    color="#164588",
+                    ecolor="#EE8F00",
+                    error_kw={"alpha": 0.7, "zorder": 100},
+                    width=1,
+                    label="All Partitions",
+                )
+
+                # Overlap with bars for AoS partitions in red to highlight them
+                n_members = (
+                    np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
+
+                )
+                aos_containers = ["".join([str(p) for p in perm]) for perm in permutations(range(n_members))]
+                aos_indices = [i for i, c in enumerate(sorted_containers) if c in aos_containers]
+                ax.bar(
+                    sorted_containers[aos_indices],
+                    sorted_runtimes[aos_indices],
+                    yerr=sorted_stddev[aos_indices] if len(sorted_runtimes) < 1000 else None,
+                    color="#C00000",
+                    width=1,
+                    label="AoS (Reordered)",
+                )
+
+                # Overlap with bars for SoA partitions in orange to highlight them
+                soa_containers = ["_".join([str(p) for p in perm]) for perm in permutations(range(n_members))]
+                soa_indices = [i for i, c in enumerate(sorted_containers) if c in soa_containers]
+                ax.bar(
+                    sorted_containers[soa_indices],
+                    sorted_runtimes[soa_indices],
+                    yerr=sorted_stddev[soa_indices] if len(sorted_runtimes) < 1000 else None,
+                    color="#EE8F00",
+                    linewidth=0.01,
+                    width=1,
+                    label="SoA",
+                )
+
+                # If there is a lot of data, we plot the standard deviation as a filled area instead of error bars
+                if len(sorted_runtimes) >= 1000:
+                    plt.fill_between(
+                        sorted_containers,
+                        sorted_runtimes - sorted_stddev,
+                        sorted_runtimes + sorted_stddev,
+                        color="#EE8F00",
+                        alpha=0.4,
+                    )
+                ax.add_patch(
+                    plt.Rectangle(
+                        (0, 0),
+                        0,
+                        0,
+                        color="#EE8F00",
+                        alpha=0.4,
+                        label="Standard Deviation",
+                    )
+                )
+
+                # Only show ticks for AoS, SoA, Min, and Max partitions to avoid clutter in the x-axis
+                xticks = []
+                xticks.append("".join([str(i) for i in range(n_members)]))   # AoS
+                xticks.append("_".join([str(i) for i in range(n_members)]))  # SoA
+                xticks.append(sorted_containers[0])  # Min
+                xticks.append(sorted_containers[-1])  # Max
+
+                plt.xticks(xticks, rotation=90, fontsize=4)
+                plt.xlabel("Partitions")
+
+                plt.ylabel(f'Runtime ({df["time_unit"].iloc[0]})')
+                plt.legend()
+
+            plt.tight_layout()
+            print(f"Saving {file}_{benchmark}_{aggregate}_runtime_barplot.pdf...")
+            plt.savefig(
+                os.path.join(
+                    output_dir, f"{file}_{benchmark}_{aggregate}_runtime_barplot.pdf"
+                )
+            )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -419,3 +545,4 @@ if __name__ == "__main__":
 
     data = read_data(args.input)
     plot_runtime_histogram(data, args.output, args.aggregate)
+    plot_runtime_barplot(data, args.output, args.aggregate)
