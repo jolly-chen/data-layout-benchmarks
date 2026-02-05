@@ -417,8 +417,10 @@ def write_benchmarks(p_list, struct_name_base, members, contiguous, generator):
                     f"\t\tRunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{p_string}>(n, alignment);\n"
                 )
 
-        f.write("\t}\n\treturn 0;\n}\n")
-        f.write(f"// END GENERATED CODE\n")
+        f.write("\t}\n\n")
+        f.write("\ttopology_finalize();\n")
+        f.write("\tperfmon_finalize();\n")
+        f.write("\treturn 0;\n}\n// END GENERATED CODE\n")
 
 
 def write_partitioned_structs(

@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 26)
 add_compile_options(-O3 -Wall -Wextra -freflection-latest -stdlib=libc++)
 add_link_options(-stdlib=libc++)
 
-find_package(likwid CONFIG REQUIRED)
+find_package(likwid CONFIG REQUIRED COMPONENTS marker)
 link_libraries(likwid::likwid)
 include_directories(${LIKWID_INCLUDE_DIRS}) # if not set in likwid-config.cmake
 

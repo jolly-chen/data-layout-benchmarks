@@ -17,6 +17,25 @@
 #include <iostream>
 #include <sstream>
 
+// This block enables to compile the code with and without the likwid header in
+// place
+#ifdef LIKWID_PERFMON
+#include <likwid-marker.h>
+#define MAX_EVENTS 10
+#else
+#define LIKWID_MARKER_INIT
+#define LIKWID_MARKER_THREADINIT
+#define LIKWID_MARKER_SWITCH
+#define LIKWID_MARKER_REGISTER(regionTag)
+#define LIKWID_MARKER_START(regionTag)
+#define LIKWID_MARKER_STOP(regionTag)
+#define LIKWID_MARKER_CLOSE
+#define LIKWID_MARKER_GET(regionTag, nevents, events, time, count)
+#define MAX_EVENTS 0
+#endif
+
+int active_likwid_group_id = -1;
+
 using Clock = std::chrono::high_resolution_clock;
 using unit = std::milli;
 
@@ -43,12 +62,13 @@ template <typename Unit> std::string unit_to_string() {
 
 // Global options parsed from the command line.
 struct FileOpts {
-  std::string input1 = "";     // Option "--input1 <string>"
-  std::string input2 = "";     // Option "--input2 <string>"
-  std::string output = "";     // Option "--output <string>"
-  std::string validation = ""; // Option "--validation <string>"
-  bool aggregate = false;      // Option "--aggregate <bool>"
-  int repetitions = 5;         // Option "--repetitions <int>"
+  std::string input1 = "";         // Option "--input1 <string>"
+  std::string input2 = "";     		 // Option "--input2 <string>"
+  std::string output = "";     		 // Option "--output <string>"
+  std::string validation = ""; 		 // Option "--validation <string>"
+  bool aggregate = false;      		 // Option "--aggregate <bool>"
+  size_t repetitions = 5;          // Option "--repetitions <int>"
+	std::string likwid_group = "L3"; // Option "--likwid_group <string>"
 };
 FileOpts opts;
 
@@ -176,29 +196,42 @@ void ValidateResults(std::vector<double> &results, size_t in_size) {
 
 /* Print configuration and timing information in csv format. */
 template <typename Container, std::meta::info BenchmarkFunc>
-void PrintTiming(std::vector<double> &measured_times, size_t in_size) {
+void PrintTiming(std::vector<double> &measured_times,
+                 std::vector<std::vector<double>> &event_states, size_t in_size) {
   if (opts.aggregate) {
-    double min = *std::ranges::min_element(measured_times);
-    double max = *std::ranges::max_element(measured_times);
-    double avg =
-        std::reduce(measured_times.begin(), measured_times.end(), 0.0) /
-        measured_times.size();
-    double stddev =
-        std::sqrt(std::reduce(measured_times.begin(), measured_times.end(), 0.0,
-                              [avg](double acc, double t) {
-                                return acc + (t - avg) * (t - avg);
-                              }) /
-                  measured_times.size());
+    auto output_aggregate = [&](auto &arr) {
+      double min = *std::ranges::min_element(arr);
+      double max = *std::ranges::max_element(arr);
+      double avg = std::reduce(arr.begin(), arr.end(), 0.0) / arr.size();
+      double stddev =
+          std::sqrt(std::reduce(arr.begin(), arr.end(), 0.0,
+                                [avg](double acc, double t) {
+                                  return acc + (t - avg) * (t - avg);
+                                }) /
+                    arr.size());
+      *output << "," << min << "," << max << "," << avg << "," << stddev;
+    };
+
     *output << identifier_of(BenchmarkFunc) << ","
             << GetContainerName<Container>() << "," << in_size << ","
-            << sizeof(Container) << "," << unit_to_string<unit>() << "," << min
-            << "," << max << "," << avg << "," << stddev << std::endl;
+            << sizeof(Container) << "," << unit_to_string<unit>();
+    output_aggregate(measured_times);
+		for (size_t e = 0; e < event_states.size(); ++e) {
+			output_aggregate(event_states[e]);
+		}
+    *output << std::endl;
   } else {
-    for (auto time : measured_times) {
+		for (size_t r = 0; r < measured_times.size(); ++r) {
       *output << identifier_of(BenchmarkFunc) << ","
               << GetContainerName<Container>() << "," << in_size << ","
               << sizeof(Container) << "," << unit_to_string<unit>() << ","
-              << time << std::endl;
+              << measured_times[r];
+
+			for (size_t e = 0; e < event_states.size(); ++e) {
+				*output << "," << event_states[e][r];
+			}
+
+      *output << std::endl;
     }
   }
 }
@@ -211,9 +244,13 @@ template <typename Container, std::meta::info BenchmarkFunc,
 void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
                    ExtraArgs... extra_args) {
   std::vector<double> measured_times;
+  // Event count per repetition for each event in the active group.
+  std::vector<std::vector<double>> event_states(
+      perfmon_getNumberOfEvents(active_likwid_group_id),
+      std::vector<double>(opts.repetitions));
 
-  for (int _ = 0; _ < opts.repetitions; ++_) {
-    // Initialize input1 containers.
+  for (size_t r = 0; r < opts.repetitions; ++r) {
+    // Initialize input container.
     Container v1(in_size, alignment);
     for (size_t i = 0; i < in_size; ++i) {
       v1[i].pt = input1_data[i].pt;
@@ -225,10 +262,18 @@ void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
     // Cap the results size to avoid excessive memory usage.
     std::vector<double> results(std::min(out_size, max_results_size));
 
-    // Measure time taken by the benchmark function.
+
+    // Measure time taken by the benchmark function
+    perfmon_startCounters();
     auto start = Clock::now();
     [:substitute(BenchmarkFunc, {^^Container}):](v1, results, extra_args...);
     auto end = Clock::now();
+    perfmon_stopCounters();
+
+    // Gather performance counter data
+		for (size_t e = 0; e < event_states.size(); ++e) {
+			event_states[e][r] = perfmon_getLastResult(active_likwid_group_id, e, likwid_getProcessorId());
+		}
 
     ValidateResults<BenchmarkFunc>(results, in_size);
 
@@ -236,7 +281,7 @@ void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
     measured_times.push_back(elapsed.count());
   }
 
-  PrintTiming<Container, BenchmarkFunc>(measured_times, in_size);
+  PrintTiming<Container, BenchmarkFunc>(measured_times, event_states, in_size);
 }
 
 /* Run a single benchmark function that takes TWO containers of the given
@@ -248,8 +293,13 @@ void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
                    ExtraArgs... extra_args) {
   std::vector<double> measured_times;
 
-  for (int _ = 0; _ < opts.repetitions; ++_) {
-    // Initialize input1 containers.
+  // Event count per repetition for each event in the active group.
+  std::vector<std::vector<double>> event_states(
+      perfmon_getNumberOfEvents(active_likwid_group_id),
+      std::vector<double>(opts.repetitions));
+
+  for (size_t r = 0; r < opts.repetitions; ++r) {
+    // Initialize input containers.
     Container v1(in_size, alignment), v2(in_size, alignment);
     for (size_t i = 0; i < in_size; ++i) {
       v1[i].pt = input1_data[i].pt;
@@ -266,10 +316,17 @@ void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
     std::vector<double> results(std::min(out_size, max_results_size));
 
     // Measure time taken by the benchmark function.
+    perfmon_startCounters();
     auto start = Clock::now();
     [:substitute(BenchmarkFunc, {^^Container}):](v1, v2, results,
                                                  extra_args...);
     auto end = Clock::now();
+    perfmon_stopCounters();
+
+    // Gather performance counter data
+		for (size_t e = 0; e < event_states.size(); ++e) {
+			event_states[e][r] = perfmon_getLastResult(active_likwid_group_id, e, likwid_getProcessorId());
+		}
 
     ValidateResults<BenchmarkFunc>(results, in_size);
 
@@ -277,7 +334,7 @@ void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
     measured_times.push_back(elapsed.count());
   }
 
-  PrintTiming<Container, BenchmarkFunc>(measured_times, in_size);
+  PrintTiming<Container, BenchmarkFunc>(measured_times, event_states, in_size);
 }
 
 /* Run all benchmarks defined in benchmarks.h. */
@@ -315,8 +372,10 @@ void ParseOptions(std::span<std::string_view const> args) {
         << "  --validation VALIDATION_FILE    File containing the benchmark name, input1 size, max results size, and\n"
         << "                                  name of the file with data to use for validation, separated by commas\n"
         << "                                  and one benchmark per line\n"
-        << "  --aggreagte {true|false}        Print aggregate results or each repetition\n"
-        << "  --repetitions REPS              Number of times to repeat each benchmark\n";
+        << "  --aggregate {1|0}               Print aggregate results or each repetition (default: 0)\n"
+        << "  --repetitions REPS              Number of times to repeat each benchmark (default: 5)\n"
+        << "  --likwid_group GROUP            LIKWID performance group to use for counting performance events\n"
+				<< " 																  (default: L3)\n";
 		   std::exit(EXIT_SUCCESS);
     // clang-format on
   }
@@ -353,10 +412,26 @@ int main(int argc, char *argv[]) {
   // Get problem sizes and alignment
   auto err = topology_init();
   if (err < 0) {
-    fprintf(stderr, "Failed to initialize LIKWID's topology module\n");
+		fprintf(stderr, "Failed to initialize LIKWID's topology module\n");
     return EXIT_FAILURE;
   }
   CpuTopology_t topo = get_cpuTopology();
+
+  // Check if performance event monitoring is enabled with likwid-perfctr
+	likwid_pinThread(0);
+  int cpus[1] = {0};
+  err = perfmon_init(1, cpus);
+  if (err < 0) {
+    std::cerr << "Failed to initialize LIKWID performance monitoring\n";
+    return EXIT_FAILURE;
+  }
+
+  active_likwid_group_id = perfmon_addEventSet(opts.likwid_group.c_str());
+  if (active_likwid_group_id < 0) {
+    std::cerr << "Failed to activate LIKWID performance group " << opts.likwid_group << "\n";
+    return EXIT_FAILURE;
+  }
+  perfmon_setupCounters(active_likwid_group_id);
 
   std::vector<size_t> problem_sizes;
   problem_sizes.push_back(topo->cacheLevels[0].size / sizeof(Particle) /
@@ -388,12 +463,13 @@ int main(int argc, char *argv[]) {
     ParseValidationInfo(opts.validation);
   }
 
-  // Determine output stream
+  // Check if output file exists to determine whether to write header
   bool write_header = true;
   if (std::filesystem::exists(opts.output)) {
     write_header = false;
   }
 
+  // Determine output stream: file or standard output
   std::ofstream output_file(opts.output,
                             std::ios_base::app | std::ios_base::out);
   if (output_file.is_open()) {
@@ -403,13 +479,32 @@ int main(int argc, char *argv[]) {
   }
 
   if (write_header) {
+    *output << "benchmark,container,problem_size,container_byte_size,time_"
+               "unit";
+
+    auto n_events = perfmon_getNumberOfEvents(active_likwid_group_id);
     if (opts.aggregate) {
       // Write header for CSV if the output file does not already exist.
-      *output << "benchmark,container,problem_size,container_byte_size,time_unit,"
-                "min,max,avg,stddev\n";
+      *output << ",min_time,max_time,avg_time,stddev_time";
+
+      // Write performance event names to the header if run with likwid-perfctr
+      for (int i = 0; i < n_events; ++i) {
+        *output << ",min_" << perfmon_getEventName(active_likwid_group_id, i)
+                << ",max_" << perfmon_getEventName(active_likwid_group_id, i)
+                << ",avg_" << perfmon_getEventName(active_likwid_group_id, i)
+                << ",stddev_"
+                << perfmon_getEventName(active_likwid_group_id, i);
+      }
+
     } else {
-      *output << "benchmark,container,problem_size,container_byte_size,time_unit,time\n";
+      *output << ",time";
+
+      // Write performance event names to the header if run with likwid-perfctr
+      for (int i = 0; i < n_events; ++i) {
+        *output << "," << perfmon_getEventName(active_likwid_group_id, i);
+      }
     }
+    *output << "\n";
   }
 
   for (size_t n : problem_sizes) {
@@ -24104,6 +24199,9 @@ int main(int argc, char *argv[]) {
 		RunAllBenchmarks<PartitionedContainer0_1_2_3_4_65>(n, alignment);
 		RunAllBenchmarks<PartitionedContainer0_1_2_3_4_5_6>(n, alignment);
 	}
+
+	topology_finalize();
+	perfmon_finalize();
 	return 0;
 }
 // END GENERATED CODE
