@@ -7,9 +7,29 @@ set(CMAKE_CXX_STANDARD 26)
 add_compile_options(-O3 -Wall -Wextra -freflection-latest -stdlib=libc++)
 add_link_options(-stdlib=libc++)
 
+# Find LIKWID
 find_package(likwid CONFIG REQUIRED COMPONENTS marker)
-link_libraries(likwid::likwid)
 include_directories(${LIKWID_INCLUDE_DIRS}) # if not set in likwid-config.cmake
+link_libraries(likwid::likwid)
+
+# Find PAPI
+find_path(PAPI_INCLUDE_DIR papi.h)
+find_library(PAPI_LIBRARIES NAMES papi)
+
+if (PAPI_INCLUDE_DIR)
+    message(STATUS "PAPI include found at: ${PAPI_INCLUDE_DIR}")
+else()
+    message(FATAL_ERROR "PAPI include directory (papi.h) not found.")
+endif()
+
+if (PAPI_LIBRARIES)
+    message(STATUS "PAPI library found at: ${PAPI_LIBRARIES}")
+else()
+    message(FATAL_ERROR "PAPI library (libpapi.a or libpapi.so) not found.")
+endif()
+
+include_directories(${PAPI_INCLUDE_DIR} include)
+link_libraries(${PAPI_LIBRARIES})
 
 if (vec)
     message(STATUS "Enabling vectorization flags")
@@ -17,7 +37,4 @@ if (vec)
 endif()
 
 add_executable(test test.cpp)
-# target_precompile_headers(test PUBLIC datastructures.h) # crashes the compiler?
-
 add_executable(main main.cpp)
-# target_precompile_headers(main PUBLIC datastructures.h) # crashes the compiler?

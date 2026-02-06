@@ -54,8 +54,8 @@ def define_contiguous_partitions_struct(partition, struct_name_base, generator):
     s = "struct Partitions {\n"
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base, generator)
-        s += f"\t\tstd::span<{memtype}> p{si};\n"
-    s += "\t};"
+        s += f"    std::span<{memtype}> p{si};\n"
+    s += "  };"
     return s
 
 
@@ -71,10 +71,10 @@ def assign_contiguous_partitions(partition, struct_name_base, generator):
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base, generator)
         s += (
-            f"\t\tp.p{si} = std::span<{memtype}>("
+            f"    p.p{si} = std::span<{memtype}>("
             + f"std::launder(reinterpret_cast<{memtype}*>(new (&storage[offset]) {memtype}[n])), n);\n"
         )
-        s += f"\t\toffset += AlignSize(p.p{si}.size_bytes(), alignment);\n"
+        s += f"    offset += AlignSize(p.p{si}.size_bytes(), alignment);\n"
     return s
 
 
@@ -89,9 +89,9 @@ def deallocate_contiguous_partitions(partition, struct_name_base, generator):
     s = "for (size_t i = n - 1; i == 0; --i) {\n"
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base, generator)
-        s += f"\t\t\tp.p{si}[i].~{memtype}();\n"
-    s += "\t\t}\n\n"
-    s += "\t\tstd::free(storage);\n"
+        s += f"      p.p{si}[i].~{memtype}();\n"
+    s += "    }\n\n"
+    s += "    std::free(storage);\n"
     return s
 
 
@@ -105,8 +105,8 @@ def define_partitions_struct(partition, struct_name_base, generator):
     """
     s = "struct Partitions {\n"
     for si, subset in enumerate(partition):
-        s += f"\t\t{subparticle_string(subset, struct_name_base, generator)} *p{si};\n"
-    s += "\t};"
+        s += f"    {subparticle_string(subset, struct_name_base, generator)} *p{si};\n"
+    s += "  };"
     return s
 
 
@@ -123,7 +123,7 @@ def assign_partitions(partition, struct_name_base, generator):
         memtype = subparticle_string(subset, struct_name_base, generator)
         if si != 0:
             s += "\n"
-        s += f"\t\tp.p{si} = static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment)));"
+        s += f"    p.p{si} = static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment)));"
     return s
 
 
@@ -140,7 +140,7 @@ def deallocate_partitions(partition, struct_name_base, generator):
         memtype = subparticle_string(subset, struct_name_base, generator)
         if si != 0:
             s += "\n"
-        s += f"\t\tstd::free(p.p{si});"
+        s += f"    std::free(p.p{si});"
     return s
 
 
@@ -391,7 +391,7 @@ def write_benchmarks(p_list, struct_name_base, members, contiguous, generator):
         main_start = [i for i, l in enumerate(lines) if "problem_sizes" in l][-1]
         f.writelines(lines[: main_start + 1])
 
-        f.write(f"\t\t// THIS IS GENERATED USING generate_datastructures.py\n")
+        f.write(f"    // THIS IS GENERATED USING generate_datastructures.py\n")
         if generator == "cpp":
             for p_string in p_list:
                 partition = [[int(o) for o in subset] for subset in p_string.split("_")]
@@ -408,19 +408,19 @@ def write_benchmarks(p_list, struct_name_base, members, contiguous, generator):
                         mapping[m] = f"{{{si}, {im}}}"
 
                 f.write(
-                    f"\t\tRunAllBenchmarks<PartitionedContainer<{struct_name_base}Ref,"
+                    f"    RunAllBenchmarks<PartitionedContainer<{struct_name_base}Ref,"
                     + f" Mapping({{{', '.join(mapping)}}}).data(), {splitops}>>(n, alignment);\n"
                 )
         else:
             for p_string in p_list:
                 f.write(
-                    f"\t\tRunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{p_string}>(n, alignment);\n"
+                    f"    RunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{p_string}>(n, alignment);\n"
                 )
 
-        f.write("\t}\n\n")
-        f.write("\ttopology_finalize();\n")
-        f.write("\tperfmon_finalize();\n")
-        f.write("\treturn 0;\n}\n// END GENERATED CODE\n")
+        f.write("  }\n\n")
+        f.write("  PAPI_cleanup_eventset(papi_eventset);\n")
+        f.write("  PAPI_destroy_eventset(&papi_eventset);\n")
+        f.write("  return 0;\n}\n// END GENERATED CODE\n")
 
 
 def write_partitioned_structs(
@@ -581,7 +581,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(
-        f"Configuration:\n\tbatch_size={args.batch_size}\n\tbatch_num={args.batch_num}\n\tcontiguous={args.contiguous}\n\tgenerator={args.generator}\n\tonly={args.only}"
+        f"Configuration:\n  batch_size={args.batch_size}\n  batch_num={args.batch_num}\n  contiguous={args.contiguous}\n  generator={args.generator}\n  only={args.only}"
     )
 
     if args.batch_size == -1:
