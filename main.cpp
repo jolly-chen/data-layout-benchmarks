@@ -31,7 +31,7 @@ size_t papi_nevents = 0;
 using Clock = std::chrono::high_resolution_clock;
 using unit = std::milli;
 
-// 2^16, maximum number of results to store to cap memory usage.
+/* 2^16, maximum number of results to store to cap memory usage. */
 size_t max_results_size = 65536;
 
 std::vector<Particle> input1_data; // Cache for input1 data
@@ -190,7 +190,7 @@ void ValidateResults(std::vector<double> &results, size_t in_size) {
 /* Print configuration and timing information in csv format. */
 template <typename Container, std::meta::info BenchmarkFunc>
 void PrintTiming(std::vector<double> &measured_times,
-                 std::vector<std::vector<double>> &event_states,
+                 std::vector<std::vector<long long>> &event_states,
                  size_t in_size) {
   if (opts.aggregate) {
     auto output_aggregate = [&](auto &arr) {
@@ -240,8 +240,8 @@ void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
   std::vector<double> measured_times;
 
   // Event count per repetition for each event.
-  std::vector<std::vector<double>> event_states(
-      papi_nevents, std::vector<double>(opts.repetitions));
+  std::vector<std::vector<long long>> event_states(
+      papi_nevents, std::vector<long long>(opts.repetitions));
   std::vector<long long> count(papi_nevents);
 
   for (size_t r = 0; r < opts.repetitions + opts.warmup; ++r) {
@@ -294,8 +294,8 @@ void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
   std::vector<double> measured_times;
 
   // Event count per repetition for each event.
-  std::vector<std::vector<double>> event_states(
-      papi_nevents, std::vector<double>(opts.repetitions));
+  std::vector<std::vector<long long>> event_states(
+      papi_nevents, std::vector<long long>(opts.repetitions));
   std::vector<long long> count(papi_nevents);
 
   for (size_t r = 0; r < opts.repetitions + opts.warmup; ++r) {
@@ -380,7 +380,7 @@ void ParseOptions(std::span<std::string_view const> args) {
         << "                                  and one benchmark per line\n"
         << "  --aggregate {1|0}               Print aggregate results or each repetition (default: 0)\n"
         << "  --repetitions REPS              Number of times to repeat each benchmark (default: 5)\n"
-        << "  --warmup WARMUP                 Number of warmup iterations before timing (default: 0)\n"
+        << "  --warmup WARMUP                 Number of warmup iterations before timing (default: 1)\n"
         << "  --papi_events GROUP             PAPI events to use for counting hardware counters. \n"
         << "                                  Check available events using papi_avail (default: PAPI_TOT_CYC)\n";
        std::exit(EXIT_SUCCESS);
@@ -434,6 +434,7 @@ int main(int argc, char *argv[]) {
     }
     CHECK_PAPI_RETURN(PAPI_create_eventset(&papi_eventset));
 
+    // Add specified comma-separated PAPI events to the event set
     std::stringstream ss(opts.papi_events);
     std::string event;
     while (std::getline(ss, event, ',')) {
