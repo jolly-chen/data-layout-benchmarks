@@ -60,6 +60,7 @@ struct FileOpts {
   std::string validation = "";              // Option "--validation <string>"
   bool aggregate = false;                   // Option "--aggregate <bool>"
   size_t repetitions = 5;                   // Option "--repetitions <int>"
+  size_t warmup = 1;                        // Option "--warmup <int>"
   std::string papi_events = "PAPI_TOT_CYC"; // Option "--papi_events <string>"
 };
 FileOpts opts;
@@ -243,7 +244,7 @@ void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
       papi_nevents, std::vector<double>(opts.repetitions));
   std::vector<long long> count(papi_nevents);
 
-  for (size_t r = 0; r < opts.repetitions; ++r) {
+  for (size_t r = 0; r < opts.repetitions + opts.warmup; ++r) {
     // Initialize input container.
     Container v1(in_size, alignment);
     for (size_t i = 0; i < in_size; ++i) {
@@ -264,9 +265,14 @@ void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
     auto end = Clock::now();
     CHECK_PAPI_RETURN(PAPI_stop(papi_eventset, count.data()));
 
+    // Skip warmup iterations
+    if (r < opts.warmup) {
+      continue;
+    }
+
     // Gather performance counter data
     for (size_t e = 0; e < event_states.size(); ++e) {
-      event_states[e][r] = count[e];
+      event_states[e][r - opts.warmup] = count[e];
     }
 
     ValidateResults<BenchmarkFunc>(results, in_size);
@@ -292,7 +298,7 @@ void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
       papi_nevents, std::vector<double>(opts.repetitions));
   std::vector<long long> count(papi_nevents);
 
-  for (size_t r = 0; r < opts.repetitions; ++r) {
+  for (size_t r = 0; r < opts.repetitions + opts.warmup; ++r) {
     // Initialize input containers.
     Container v1(in_size, alignment), v2(in_size, alignment);
     for (size_t i = 0; i < in_size; ++i) {
@@ -318,9 +324,14 @@ void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
     auto end = Clock::now();
     CHECK_PAPI_RETURN(PAPI_stop(papi_eventset, count.data()));
 
+    // Skip warmup iterations
+    if (r < opts.warmup) {
+      continue;
+    }
+
     // Gather performance counter data
     for (size_t e = 0; e < event_states.size(); ++e) {
-      event_states[e][r] = count[e];
+      event_states[e][r - opts.warmup] = count[e];
     }
 
     ValidateResults<BenchmarkFunc>(results, in_size);
@@ -369,6 +380,7 @@ void ParseOptions(std::span<std::string_view const> args) {
         << "                                  and one benchmark per line\n"
         << "  --aggregate {1|0}               Print aggregate results or each repetition (default: 0)\n"
         << "  --repetitions REPS              Number of times to repeat each benchmark (default: 5)\n"
+        << "  --warmup WARMUP                 Number of warmup iterations before timing (default: 0)\n"
         << "  --papi_events GROUP             PAPI events to use for counting hardware counters. \n"
         << "                                  Check available events using papi_avail (default: PAPI_TOT_CYC)\n";
        std::exit(EXIT_SUCCESS);
