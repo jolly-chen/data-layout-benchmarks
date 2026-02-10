@@ -9,6 +9,7 @@ import numpy as np
 import argparse
 import os
 import matplotlib
+import matplotlib.ticker as ticker
 
 from itertools import permutations
 
@@ -377,16 +378,16 @@ def plot_runtime_histogram(df, output_dir, aggregate):
                 annotate_minmax(ax, df_bp, heights, annotations, aggregate)
                 annotate_common(ax, df_bp, edges, annotations, aggregate)
 
-                plt.ylabel("Frequency")
-                plt.yscale("symlog")
+                ax.set_ylabel("Frequency")
+                ax.set_yscale("symlog")
                 y_minor = matplotlib.ticker.LogLocator(
                     base=10.0, subs=np.arange(1, 10) * 0.1, numticks=10
                 )
                 ax.yaxis.set_minor_locator(y_minor)
                 ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-                plt.grid(axis="y", alpha=0.75)
+                ax.grid(axis="y", alpha=0.75)
 
-                plt.xlabel(f'Runtime ({df["time_unit"].iloc[0]})')
+                ax.set_xlabel(f'Runtime ({df["time_unit"].iloc[0]})')
                 ax.legend()
                 adjust_annotations(ax, annotations)
 
@@ -406,14 +407,33 @@ def plot_runtime_barplot(df, output_dir, aggregate):
     :param df: Dictionary of DataFrames keyed by file name
     :param output_dir: Directory to save the output plots
     """
+
     for file, df in df.items():
         for benchmark in df["benchmark"].unique():
-            plt.figure(figsize=(50, 6 * len(df["problem_size"].unique())))
+            fig = plt.figure(figsize=(20, 6 * len(df["problem_size"].unique())))
             plt.suptitle(f"Runtime Barplot of {benchmark}")
 
+            n_members = (
+                np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
+            )
+            aos_containers = [
+                "".join([str(p) for p in perm])
+                for perm in permutations(range(n_members))
+            ]
+            soa_containers = [
+                "_".join([str(p) for p in perm])
+                for perm in permutations(range(n_members))
+            ]
+
+            xticks = []
+            xticks.append("".join([str(i) for i in range(n_members)]))  # AoS
+            xticks.append("_".join([str(i) for i in range(n_members)]))  # SoA
+
+            subplots = []
             for pi, problem_size in enumerate(df["problem_size"].unique()):
                 ax = plt.subplot(len(df["problem_size"].unique()), 1, pi + 1)
-                plt.title(f"Problem Size: {problem_size}")
+                subplots.append(ax)
+                ax.set_title(f"Problem Size: {problem_size}")
 
                 df_bp = df[
                     (df["benchmark"] == benchmark)
@@ -421,21 +441,27 @@ def plot_runtime_barplot(df, output_dir, aggregate):
                 ]
 
                 sorted_indices = np.argsort(get_agg_value(df_bp, "avg"))
-                sorted_runtimes = np.array(get_agg_value(df_bp, "avg").iloc[sorted_indices])
-                sorted_stddev = np.array(get_agg_value(df_bp, "stddev").iloc[sorted_indices])
+                sorted_runtimes = np.array(
+                    get_agg_value(df_bp, "avg").iloc[sorted_indices]
+                )
+                sorted_stddev = np.array(
+                    get_agg_value(df_bp, "stddev").iloc[sorted_indices]
+                )
                 sorted_containers = (
                     df_bp.groupby("container")["time"].mean().index[sorted_indices]
                     if "time" in df.columns
                     else df_bp["container"].iloc[sorted_indices]
                 )
-                sorted_containers = np.array([
-                    (
-                        c.replace("PartitionedContiguousContainer", "")
-                        if "Contiguous" in c
-                        else c.replace("PartitionedContainer", "")
-                    )
-                    for c in sorted_containers
-                ])
+                sorted_containers = np.array(
+                    [
+                        (
+                            c.replace("PartitionedContiguousContainer", "")
+                            if "Contiguous" in c
+                            else c.replace("PartitionedContainer", "")
+                        )
+                        for c in sorted_containers
+                    ]
+                )
 
                 # Plot barplot of all partitions
                 ax.bar(
@@ -450,28 +476,34 @@ def plot_runtime_barplot(df, output_dir, aggregate):
                 )
 
                 # Overlap with bars for AoS partitions in red to highlight them
-                n_members = (
-                    np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
-
-                )
-                aos_containers = ["".join([str(p) for p in perm]) for perm in permutations(range(n_members))]
-                aos_indices = [i for i, c in enumerate(sorted_containers) if c in aos_containers]
+                aos_indices = [
+                    i for i, c in enumerate(sorted_containers) if c in aos_containers
+                ]
                 ax.bar(
                     sorted_containers[aos_indices],
                     sorted_runtimes[aos_indices],
-                    yerr=sorted_stddev[aos_indices] if len(sorted_runtimes) < 1000 else None,
+                    yerr=(
+                        sorted_stddev[aos_indices]
+                        if len(sorted_runtimes) < 1000
+                        else None
+                    ),
                     color="#C00000",
                     width=1,
                     label="AoS (Reordered)",
                 )
 
                 # Overlap with bars for SoA partitions in orange to highlight them
-                soa_containers = ["_".join([str(p) for p in perm]) for perm in permutations(range(n_members))]
-                soa_indices = [i for i, c in enumerate(sorted_containers) if c in soa_containers]
-                ax.bar(
+                soa_indices = [
+                    i for i, c in enumerate(sorted_containers) if c in soa_containers
+                ]
+                bar = ax.bar(
                     sorted_containers[soa_indices],
                     sorted_runtimes[soa_indices],
-                    yerr=sorted_stddev[soa_indices] if len(sorted_runtimes) < 1000 else None,
+                    yerr=(
+                        sorted_stddev[soa_indices]
+                        if len(sorted_runtimes) < 1000
+                        else None
+                    ),
                     color="#EE8F00",
                     linewidth=0.01,
                     width=1,
@@ -480,7 +512,7 @@ def plot_runtime_barplot(df, output_dir, aggregate):
 
                 # If there is a lot of data, we plot the standard deviation as a filled area instead of error bars
                 if len(sorted_runtimes) >= 1000:
-                    plt.fill_between(
+                    ax.fill_between(
                         sorted_containers,
                         sorted_runtimes - sorted_stddev,
                         sorted_runtimes + sorted_stddev,
@@ -498,18 +530,37 @@ def plot_runtime_barplot(df, output_dir, aggregate):
                     )
                 )
 
-                # Only show ticks for AoS, SoA, Min, and Max partitions to avoid clutter in the x-axis
-                xticks = []
-                xticks.append("".join([str(i) for i in range(n_members)]))   # AoS
-                xticks.append("_".join([str(i) for i in range(n_members)]))  # SoA
                 xticks.append(sorted_containers[0])  # Min
                 xticks.append(sorted_containers[-1])  # Max
 
-                plt.xticks(xticks, rotation=90, fontsize=4)
-                plt.xlabel("Partitions")
+                ax.tick_params(axis="y", which="both")
+                ax.set_xlabel("Partitions")
 
-                plt.ylabel(f'Runtime ({df["time_unit"].iloc[0]})')
-                plt.legend()
+                ax.set_yscale("log")
+                ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:g}"))
+                if ax.get_ylim()[1] / ax.get_ylim()[0] < 10:
+                    ax.yaxis.set_minor_formatter(ticker.StrMethodFormatter("{x:g}"))
+
+                ax.set_ylabel(f'Runtime ({df["time_unit"].iloc[0]})')
+                ax.legend()
+
+            # Only show ticks for AoS, SoA, Min, and Max partitions for each problem size to avoid clutter in the x-axis.
+            # Adjust x tick labels by lowering them if they are detected to be overlapping.
+            for ax in subplots:
+                ax.set_xticks(xticks)
+                ax.set_xticklabels(
+                    xticks, rotation=45, fontsize=5, ha="right", rotation_mode="anchor"
+                )
+                ax.get_xticklabels()[0].set_color("#C00000")  # AoS
+                ax.get_xticklabels()[1].set_color("#EE8F00")  # SoA
+                sorted_xlabels = sorted(
+                    ax.get_xticklabels(), key=lambda x: x.get_position()[0]
+                )
+                for i, xtick in enumerate(sorted_xlabels[1:], start=1):
+                    if xtick.get_position()[0] - sorted_xlabels[i - 1].get_position()[
+                        0
+                    ] < 0.005 * len(sorted_containers):
+                        xtick.set_y(-0.02)
 
             plt.tight_layout()
             print(f"Saving {file}_{benchmark}_{aggregate}_runtime_barplot.pdf...")
