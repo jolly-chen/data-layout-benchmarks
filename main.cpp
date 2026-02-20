@@ -2,10 +2,8 @@
 #include "datastructures.h"
 
 #include <algorithm>
-#include <numeric>
 #include <random>
 
-#include <experimental/meta>
 #include <string>
 
 #include <chrono>
@@ -18,6 +16,7 @@
 #include <sstream>
 
 #include <papi.h>
+
 #define CHECK_PAPI_RETURN(retval)                                              \
   if (retval != PAPI_OK) {                                                     \
     std::cerr << "PAPI error at " << __FILE__ << ":" << __LINE__ << ": "       \
@@ -37,21 +36,6 @@ size_t max_results_size = 65536;
 std::vector<Particle> input1_data; // Cache for input1 data
 std::vector<Particle> input2_data; // Cache for input2 data
 
-/* Convert a time unit type to its string representation. */
-template <typename Unit> std::string unit_to_string() {
-  if constexpr (std::same_as<Unit, std::nano>) {
-    return "ns";
-  } else if constexpr (std::same_as<Unit, std::micro>) {
-    return "us";
-  } else if constexpr (std::same_as<Unit, std::milli>) {
-    return "ms";
-  } else if constexpr (std::same_as<Unit, std::ratio<1>>) {
-    return "s";
-  } else {
-    return "unknown_unit";
-  }
-}
-
 // Global options parsed from the command line.
 struct FileOpts {
   std::string input1 = "";                  // Option "--input1 <string>"
@@ -63,6 +47,7 @@ struct FileOpts {
   size_t warmup = 1;                        // Option "--warmup <int>"
   std::string papi_events = "PAPI_TOT_CYC"; // Option "--papi_events <string>"
 };
+extern FileOpts opts;
 FileOpts opts;
 
 // Information for validation of benchmark results
@@ -114,7 +99,7 @@ void ReadData(std::string filename, size_t n,
 }
 
 /* Parse validation info from the given CSV file. */
-void ParseValidationInfo(std::string filename) {
+void ParseValidationInfo(const std::string filename) {
   std::ifstream is(filename);
   if (is.is_open()) {
     std::string line;
@@ -142,7 +127,7 @@ void ParseValidationInfo(std::string filename) {
 }
 
 /* Read validation data from the given file into the container. */
-std::vector<double> ReadValidationData(std::string filename) {
+std::vector<double> ReadValidationData(const std::string filename) {
   std::vector<double> data;
 
   std::ifstream is(filename);
@@ -160,12 +145,12 @@ std::vector<double> ReadValidationData(std::string filename) {
 }
 
 /* Validate results if a validation file is provided. */
-template <std::meta::info BenchmarkFunc>
-void ValidateResults(std::vector<double> &results, size_t in_size) {
+void ValidateResults(const std::string benchmark_name,
+                     const std::vector<double> &results, const size_t in_size) {
   if (!validation_data.empty()) {
     auto validation_file =
         std::ranges::find_if(validation_data, [=](const ValidationInfo &info) {
-          return info.benchmark_name == identifier_of(BenchmarkFunc) &&
+          return info.benchmark_name == benchmark_name &&
                  info.input_size == in_size &&
                  info.max_results_size == max_results_size;
         });
@@ -176,10 +161,9 @@ void ValidateResults(std::vector<double> &results, size_t in_size) {
       for (size_t j = 0; j < results.size(); ++j) {
         if (std::abs(results[j] - expected_results[j]) > 1e-6) {
           std::cerr << "\033[1;31mVALIDATION FAILED\033[0m for benchmark "
-                    << identifier_of(BenchmarkFunc) << " with input1 size "
-                    << in_size << " at index " << j << ": expected "
-                    << expected_results[j] << ", got " << results[j]
-                    << std::endl;
+                    << benchmark_name << " with input1 size " << in_size
+                    << " at index " << j << ": expected " << expected_results[j]
+                    << ", got " << results[j] << std::endl;
           break;
         }
       }
@@ -188,10 +172,11 @@ void ValidateResults(std::vector<double> &results, size_t in_size) {
 }
 
 /* Print configuration and timing information in csv format. */
-template <typename Container, std::meta::info BenchmarkFunc>
-void PrintTiming(std::vector<double> &measured_times,
-                 std::vector<std::vector<long long>> &event_states,
-                 size_t in_size) {
+template <typename Container, typename Unit>
+void PrintTiming(const std::string &benchmark_name,
+                 const std::vector<double> &measured_times,
+                 const std::vector<std::vector<long long>> &event_states,
+                 const size_t in_size) {
   if (opts.aggregate) {
     auto output_aggregate = [&](auto &arr) {
       double min = *std::ranges::min_element(arr);
@@ -206,9 +191,8 @@ void PrintTiming(std::vector<double> &measured_times,
       *output << "," << min << "," << max << "," << avg << "," << stddev;
     };
 
-    *output << identifier_of(BenchmarkFunc) << ","
-            << GetContainerName<Container>() << "," << in_size << ","
-            << sizeof(Container) << "," << unit_to_string<unit>();
+    *output << benchmark_name << "," << Container::to_string() << "," << in_size
+            << "," << sizeof(Container) << "," << unit_to_string<Unit>();
     output_aggregate(measured_times);
     for (size_t e = 0; e < event_states.size(); ++e) {
       output_aggregate(event_states[e]);
@@ -216,10 +200,9 @@ void PrintTiming(std::vector<double> &measured_times,
     *output << std::endl;
   } else {
     for (size_t r = 0; r < measured_times.size(); ++r) {
-      *output << identifier_of(BenchmarkFunc) << ","
-              << GetContainerName<Container>() << "," << in_size << ","
-              << sizeof(Container) << "," << unit_to_string<unit>() << ","
-              << measured_times[r];
+      *output << benchmark_name << "," << Container::to_string() << ","
+              << in_size << "," << sizeof(Container) << ","
+              << unit_to_string<Unit>() << "," << measured_times[r];
 
       for (size_t e = 0; e < event_states.size(); ++e) {
         *output << "," << event_states[e][r];
@@ -233,9 +216,9 @@ void PrintTiming(std::vector<double> &measured_times,
 /* Run a single benchmark function that takes ONE containers of the given
  * container type.
  */
-template <typename Container, std::meta::info BenchmarkFunc,
-          typename... ExtraArgs>
-void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
+template <typename Container, typename BenchmarkFunc, typename... ExtraArgs>
+void RunBenchmark1(BenchmarkFunc benchmarkfunc, std::string benchmark_name,
+                   size_t in_size, size_t alignment, size_t out_size,
                    ExtraArgs... extra_args) {
   std::vector<double> measured_times;
 
@@ -261,7 +244,7 @@ void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
     PAPI_reset(papi_eventset);
     CHECK_PAPI_RETURN(PAPI_start(papi_eventset));
     auto start = Clock::now();
-    [:substitute(BenchmarkFunc, {^^Container}):](v1, results, extra_args...);
+    benchmarkfunc(v1, results, extra_args...);
     auto end = Clock::now();
     CHECK_PAPI_RETURN(PAPI_stop(papi_eventset, count.data()));
 
@@ -275,25 +258,26 @@ void RunBenchmark1(size_t in_size, size_t alignment, size_t out_size,
       event_states[e][r - opts.warmup] = count[e];
     }
 
-    ValidateResults<BenchmarkFunc>(results, in_size);
+    ValidateResults(benchmark_name, results, in_size);
 
     std::chrono::duration<double, unit> elapsed = end - start;
     measured_times.push_back(elapsed.count());
   }
 
-  PrintTiming<Container, BenchmarkFunc>(measured_times, event_states, in_size);
+  PrintTiming<Container, unit>(benchmark_name, measured_times, event_states,
+                               in_size);
 }
 
 /* Run a single benchmark function that takes TWO containers of the given
  * container type.
  */
-template <typename Container, std::meta::info BenchmarkFunc,
-          typename... ExtraArgs>
-void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
+template <typename Container, typename BenchmarkFunc, typename... ExtraArgs>
+void RunBenchmark2(BenchmarkFunc benchmarkfunc, std::string benchmark_name,
+                   size_t in_size, size_t alignment, size_t out_size,
                    ExtraArgs... extra_args) {
   std::vector<double> measured_times;
 
-  // Event count per repetition for each event.
+  // Event count per repetition for eachkernels::InvariantMassSequential event.
   std::vector<std::vector<long long>> event_states(
       papi_nevents, std::vector<long long>(opts.repetitions));
   std::vector<long long> count(papi_nevents);
@@ -319,8 +303,7 @@ void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
     PAPI_reset(papi_eventset);
     CHECK_PAPI_RETURN(PAPI_start(papi_eventset));
     auto start = Clock::now();
-    [:substitute(BenchmarkFunc, {^^Container}):](v1, v2, results,
-                                                 extra_args...);
+    benchmarkfunc(v1, v2, results, extra_args...);
     auto end = Clock::now();
     CHECK_PAPI_RETURN(PAPI_stop(papi_eventset, count.data()));
 
@@ -334,37 +317,42 @@ void RunBenchmark2(size_t in_size, size_t alignment, size_t out_size,
       event_states[e][r - opts.warmup] = count[e];
     }
 
-    ValidateResults<BenchmarkFunc>(results, in_size);
+    ValidateResults(benchmark_name, results, in_size);
 
     std::chrono::duration<double, unit> elapsed = end - start;
     measured_times.push_back(elapsed.count());
   }
 
-  PrintTiming<Container, BenchmarkFunc>(measured_times, event_states, in_size);
+  PrintTiming<Container, unit>(benchmark_name, measured_times, event_states,
+                               in_size);
 }
 
 /* Run all benchmarks defined in benchmarks.h. */
 template <typename Container>
 void RunAllBenchmarks(size_t n, size_t alignment) {
-  RunBenchmark2<Container, ^^kernels::InvariantMassSequential>(n, alignment, n);
+  RunBenchmark2<Container>(kernels::InvariantMassSequential<Container>,
+                           "InvariantMassSequential", n, alignment, n);
 
   std::vector<size_t> indices(n);
   std::iota(begin(indices), end(indices), 0);
   std::mt19937 rng(123);
   std::shuffle(begin(indices), end(indices), rng);
-  RunBenchmark2<Container, ^^kernels::InvariantMassRandom>(n, alignment, n,
-                                                           indices);
+  RunBenchmark2<Container>(kernels::InvariantMassRandom<Container>,
+                           "InvariantMassRandom", n, alignment, n, indices);
 
-  RunBenchmark1<Container, ^^kernels::DeltaR2Pairwise>(n, alignment,
-                                                       round(n * (n - 1) / 2));
+  RunBenchmark1<Container>(kernels::DeltaR2Pairwise<Container>,
+                           "DeltaR2Pairwise", n, alignment,
+                           round(n * (n - 1) / 2));
 }
 
 /* Parse command-line options.
    Taken from
    https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p2996r13.html#parsing-command-line-options
  */
-void ParseOptions(std::span<std::string_view const> args) {
-  if (std::ranges::find(args, "--help") != args.end()) {
+void ParseOptions(int &argc, char **argv) {
+  CmdLineParser cmdLineParser(argc, argv);
+  if (cmdLineParser.CmdOptionExists("--help") ||
+      cmdLineParser.CmdOptionExists("-h")) {
     // clang-format off
     std::cout
         << "Usage: ./main [-h] [--input1 INPUT_FILE] [--input2 INPUT_FILE] "
@@ -384,37 +372,44 @@ void ParseOptions(std::span<std::string_view const> args) {
         << "  --papi_events GROUP             PAPI events to use for counting hardware counters. \n"
         << "                                  Check available events using papi_avail (default: PAPI_TOT_CYC)\n";
        std::exit(EXIT_SUCCESS);
-    // clang-format on
   }
 
-  // Parse benchmark configuration options
-  constexpr auto ctx = std::meta::access_context::current();
-  template for (constexpr auto dm : define_static_array(
-                    nonstatic_data_members_of(^^FileOpts, ctx))) {
-    auto it = std::ranges::find_if(args, [](std::string_view arg) {
-      return arg.starts_with("--") && arg.substr(2) == identifier_of(dm);
-    });
+  auto input1 = cmdLineParser.GetCmdOption("--input1");
+  if (!input1.empty()) { opts.input1 = input1; }
 
-    if (it == args.end()) {
-      // no option provided, use default
-      continue;
-    } else if (it + 1 == args.end()) {
-      std::cerr << "Option " << *it << " is missing a value\n";
-      std::exit(EXIT_FAILURE);
-    }
+  auto input2 = cmdLineParser.GetCmdOption("--input2");
+  if (!input2.empty()) { opts.input2 = input2; }
 
-    using T = typename[:type_of(dm):];
-    auto iss = std::stringstream(it[1]);
-    if (iss >> opts.[:dm:]; !iss) {
-      std::cerr << "Failed to parse option " << *it << " into a "
-                << display_string_of(^^T) << '\n';
-      std::exit(EXIT_FAILURE);
-    }
-  }
+  auto output = cmdLineParser.GetCmdOption("--output");
+  if (!output.empty()) { opts.output = output; }
+
+  auto validation = cmdLineParser.GetCmdOption("--validation");
+  if (!validation.empty()) { opts.validation = validation; }
+
+  auto aggregate = cmdLineParser.GetCmdOption("--aggregate");
+  if (!aggregate.empty()) { opts.aggregate = (aggregate == "1"); }
+
+  auto repetitions = cmdLineParser.GetCmdOption("--repetitions");
+  if (!repetitions.empty()) { opts.repetitions = std::stoul(repetitions); }
+
+  auto warmup = cmdLineParser.GetCmdOption("--warmup");
+  if (!warmup.empty()) { opts.warmup = std::stoul(warmup); }
+
+  auto papi_events = cmdLineParser.GetCmdOption("--papi_events");
+  if (!papi_events.empty()) { opts.papi_events = papi_events; }
+  // clang-format on
+
+  std::cerr << "Configuration:" << "\n    input1:" << opts.input1
+            << "\n    input2=" << opts.input2 << "\n    output=" << opts.output
+            << "\n    validation=" << opts.validation
+            << "\n    aggregate=" << opts.aggregate
+            << "\n    repetitions=" << opts.repetitions
+            << "\n    warmup=" << opts.warmup
+            << "\n    papi_events=" << opts.papi_events << std::endl;
 }
 
 int main(int argc, char *argv[]) {
-  ParseOptions(std::vector<std::string_view>(argv + 1, argv + argc));
+  ParseOptions(argc, argv);
 
   // Get problem sizes and alignment
   auto err = topology_init();

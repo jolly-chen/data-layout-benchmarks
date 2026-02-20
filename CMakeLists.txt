@@ -4,8 +4,7 @@ project(data_layout_benchmarks)
 
 set(CMAKE_CXX_STANDARD 26)
 
-add_compile_options(-O3 -Wall -Wextra -freflection-latest -stdlib=libc++)
-add_link_options(-stdlib=libc++)
+add_compile_options(-O3 -Wall -Wextra)
 
 # Find LIKWID
 find_package(likwid CONFIG REQUIRED COMPONENTS marker)

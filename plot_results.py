@@ -343,7 +343,7 @@ def annotate_common(ax, df, edges, annotations, aggregate):
         bins=edges,
         color="#EE8F00",
         align="mid",
-        label="SoA (Reordered)",
+        label="SoA",
     )
 
     soa_val = get_agg_value(
@@ -368,13 +368,15 @@ def plot_runtime_histogram(df, output_dir, aggregate):
     :param output_dir: Directory to save the output plots
     """
     for file, df in df.items():
-        for benchmark in df["benchmark"].unique():
-            plt.figure(figsize=(10, 6))
-            plt.suptitle(f"Runtime Distribution of {benchmark}")
+        # for benchmark in df["benchmark"].unique():
+        for benchmark in ["InvariantMassRandom"]:
+            plt.figure(figsize=(5, 6))
+            # plt.suptitle(f"Runtime Distribution of {benchmark}")
 
-            for pi, problem_size in enumerate(df["problem_size"].unique()):
-                ax = plt.subplot(1, len(df["problem_size"].unique()), pi + 1)
-                plt.title(f"Problem Size: {problem_size}")
+            for pi, problem_size in enumerate(df["problem_size"].unique()[1:]):
+                # ax = plt.subplot(1, len(df["problem_size"].unique()), pi + 1)
+                ax = plt.subplot(1, 1,1)
+                plt.title(f"Problem Size > L3 Cache")
                 annotations = []
 
                 df_bp = df[
@@ -386,7 +388,7 @@ def plot_runtime_histogram(df, output_dir, aggregate):
                     bins="auto",
                     color="#164588",
                     align="mid",
-                    label="All Partitions",
+                    label="Other Layouts",
                 )
 
                 annotate_minmax(ax, df_bp, heights, annotations, aggregate)
@@ -409,7 +411,8 @@ def plot_runtime_histogram(df, output_dir, aggregate):
             print(f"Saving {file}_{benchmark}_{aggregate}_runtime_histogram.pdf...")
             plt.savefig(
                 os.path.join(
-                    output_dir, f"{file}_{benchmark}_{aggregate}_runtime_histogram.pdf"
+                    # output_dir, f"{file}_{benchmark}_{aggregate}_runtime_histogram.pdf"
+                    "/home/jollychen/phd/data-layout-benchmarks/images", f"kokkos_motivation.pdf"
                 )
             )
 
@@ -478,7 +481,7 @@ def barplot(ax, df, val, aggregate, aos, soa, sorted_indices=None):
         ecolor="#EE8F00",
         error_kw={"alpha": 0.7, "zorder": 100},
         width=1,
-        label="All Partitions",
+        label="Other Layouts",
     )
 
     # Overlap with bars for AoS partitions in red to highlight them
@@ -486,7 +489,6 @@ def barplot(ax, df, val, aggregate, aos, soa, sorted_indices=None):
     ax.bar(
         sorted_containers[aos_indices],
         sorted_vals[aos_indices],
-        yerr=(sorted_stddev[aos_indices] if len(sorted_vals) < 1000 else None),
         color="#C00000",
         width=1,
         label="AoS (Reordered)",
@@ -497,7 +499,6 @@ def barplot(ax, df, val, aggregate, aos, soa, sorted_indices=None):
     bar = ax.bar(
         sorted_containers[soa_indices],
         sorted_vals[soa_indices],
-        yerr=(sorted_stddev[soa_indices] if len(sorted_vals) < 1000 else None),
         color="#EE8F00",
         linewidth=0.01,
         width=1,
@@ -631,6 +632,7 @@ def plot_runtime_counters_barplot(df, output_dir, aggregate):
         )
         ax.get_xticklabels()[0].set_color("#C00000")  # AoS
         ax.get_xticklabels()[1].set_color("#EE8F00")  # SoA
+        ax.set_xlabel("Layouts")
         adjust_xticks(ax, sorted_containers)
 
         ax.set_yscale("log")
@@ -639,8 +641,8 @@ def plot_runtime_counters_barplot(df, output_dir, aggregate):
             ax.yaxis.set_minor_formatter(ticker.StrMethodFormatter("{x:g}"))
 
         ax.set_ylabel(f'Runtime ({df["time_unit"].iloc[0]})' if val == "time" else val)
+        ax.legend(loc="upper left")
 
-    #             ax.legend()
     for file, df in df.items():
         problem_size = df["problem_size"].max()
 
@@ -693,9 +695,17 @@ def plot_runtime_counters_barplot(df, output_dir, aggregate):
                     soa_containers,
                     sorted_indices,
                 )
-                plot_axes(xticks, sorted_containers, event)
+                plot_axes(
+                    xticks,
+                    sorted_containers,
+                    (
+                        event
+                        if event
+                        != "ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR"
+                        else "ANY_L1_DATA_CACHE_FILLS"
+                    ),
+                )
 
-            plt.legend(loc="upper left")
             plt.tight_layout()
             print(
                 f"Saving {file}_{benchmark}_{aggregate}_runtime_counters_barplot.pdf..."
@@ -733,5 +743,5 @@ if __name__ == "__main__":
 
     data = read_data(args.input)
     plot_runtime_histogram(data, args.output, args.aggregate)
-    plot_runtime_barplot(data, args.output, args.aggregate)
-    plot_runtime_counters_barplot(data, args.output, args.aggregate)
+    # plot_runtime_barplot(data, args.output, args.aggregate)
+    # plot_runtime_counters_barplot(data, args.output, args.aggregate)

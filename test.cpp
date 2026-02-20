@@ -1,8 +1,11 @@
 #include "test.h"
-#include "struct_transformer.h"
+
+#include <cmath>
 #include <algorithm>
 #include <iostream>
 #include <random>
+
+#include <cassert>
 
 template <typename T> void VectorSum(const T &v1, const T &v2, const std::string &tname) {
   std::cout << "Running VectorSum test with " << tname << "..."<< std::endl;
@@ -206,46 +209,9 @@ template <typename T> void VerifyAlignment0_1_23(const T &p, const std::string &
   }
 }
 
-template <auto Members> struct SubStruct;
-
-consteval { SplitStruct<S, SubStruct>(SplitOp({0, 1}), SplitOp({2, 3})); }
-consteval {
-  SplitStruct<S, SubStruct>(SplitOp({0}), SplitOp({1}), SplitOp({2}),
-                            SplitOp({3}));
-}
-
 constexpr size_t alignment = 64;
 
 int main() {
-  ////// Reflection generated containers
-  using RContiguousContainer01_23 = PartitionedContainerContiguous<
-      SRef, Mapping({{0, 0}, {0, 1}, {1, 0}, {1, 1}}).data(),
-      SubStruct<SplitOp({0, 1}).data()>, SubStruct<SplitOp({2, 3}).data()>>;
-  RContiguousContainer01_23 rc1_01_23(1000, alignment), rc2_01_23(1000, alignment);
-  VectorSum(rc1_01_23, rc2_01_23, "RContiguousContainer01_23");
-  VerifyAllocation01_23(rc1_01_23, "RContiguousContainer01_23");
-
-  using RContiguousContainer0_1_2_3 = PartitionedContainerContiguous<
-      SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
-      SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
-      SubStruct<SplitOp({2}).data()>, SubStruct<SplitOp({3}).data()>>;
-  RContiguousContainer0_1_2_3 rc1_0_1_2_3(1000, alignment);
-  VerifyAllocation0_1_2_3(rc1_0_1_2_3, "RContiguousContainer0_1_2_3");
-
-  using RContiguousContainer0_1_23 = PartitionedContainerContiguous<
-      SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
-      SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
-      SubStruct<SplitOp({2}).data()>, SubStruct<SplitOp({3}).data()>>;
-  RContiguousContainer0_1_23 rc1_0_1_23(1000, alignment);
-  VerifyAlignment0_1_23(rc1_0_1_23, "RContiguousContainer0_1_23");
-
-  using RContainer0_1_23 = PartitionedContainer<
-      SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
-      SubStruct<SplitOp({0}).data()>, SubStruct<SplitOp({1}).data()>,
-      SubStruct<SplitOp({2}).data()>, SubStruct<SplitOp({3}).data()>>;
-  RContainer0_1_23 r1_0_1_23(1000, alignment);
-  VerifyAlignment0_1_23(r1_0_1_23, "RContainer0_1_23");
-
   ////// Python generated structures
   using PyContainerContiguous01_23 = PartitionedContainerContiguous01_23;
   PyContainerContiguous01_23 pc1_01_23(1000, alignment), pc2_01_23(1000, alignment);
