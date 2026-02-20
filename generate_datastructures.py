@@ -36,7 +36,7 @@ def subparticle_string(op, struct_name_base):
     :param op: List of member indices from the original struct that need to be included in the subparticle
     :param struct_name_base: Base name of the struct
     """
-    return f"Sub{struct_name_base}<SplitOp({{{', '.join(str(i) for i in op)}}}).data()>"
+    return f"Sub{struct_name_base}<{', '.join(str(i) for i in op)}>"
 
 
 def define_contiguous_partitions_struct(partition, struct_name_base):
@@ -339,7 +339,7 @@ def write_subsets(f, struct_name_base, members, subsets):
     f.write(generate_struct_definition(struct_name_base, members) + "\n\n")
     f.write(generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n")
 
-    f.write(f"template <auto Members> struct Sub{struct_name_base};\n\n")
+    f.write(f"template <size_t... Is> struct Sub{struct_name_base};\n\n")
     f.write(
         "// Forward declarations of structures with a subset of Particle members\n"
     )

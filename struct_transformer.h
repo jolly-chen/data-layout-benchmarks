@@ -39,23 +39,22 @@ consteval auto SplitOp(std::vector<int> indices) {
 }
 
 /* Convert a list of SplitOps to a string. */
-template <typename ...Ops>
-std::string GetSplitOpsString() {
-  auto get_static_array_string = [](std::span<const int> arr, size_t i) {
+template <typename... Ops> constexpr std::string GetSplitOpsString() {
+  auto template_args_string = []<std::meta::info R, size_t I>() {
     std::string r = "";
 
-    if (i != 0)
+    if (I != 0)
       r += "_";
 
-    for (size_t i = 0; i < arr.size(); ++i) {
-      r += std::to_string(arr[i]);
+    template for (constexpr auto a :
+                  define_static_array(template_arguments_of(R))) {
+      r += std::to_string(extract<size_t>(a));
     }
     return r;
   };
 
   return [&]<size_t... Is>(std::index_sequence<Is...>) {
-    return (get_static_array_string([:template_arguments_of(^^Ops)[0]:], Is) +
-            ...);
+    return (template_args_string.template operator()<^^Ops, Is>() + ...);
   }(std::make_index_sequence<sizeof...(Ops)>());
 }
 
@@ -67,7 +66,6 @@ template <typename T> std::string GetContainerName() {
     return T::to_string();
   }
 }
-
 
 consteval auto Mapping(std::vector<std::pair<size_t, size_t>> mapping) {
   return define_static_array(mapping);
@@ -97,9 +95,16 @@ consteval auto GetMemberSpecs(std::span<const int> indices) {
  */
 template <typename In, template <auto> typename Out, typename... SplitOps>
 consteval void SplitStruct(SplitOps... ops) {
-  (define_aggregate(substitute(^^Out, { std::meta::reflect_constant_array(ops)}),
-                    GetMemberSpecs<In>(ops)),
-   ...);
+  auto unpack_op = [](std::span<const int> op) {
+    std::vector<std::meta::info> unpacked;
+    for (size_t i : op) {
+      unpacked.push_back(std::meta::reflect_constant(i));
+    }
+    return unpacked;
+  };
+
+  (define_aggregate(substitute(^^Out, unpack_op(ops)),
+                    GetMemberSpecs<In>(ops)), ...);
 };
 // clang-format on
 
@@ -110,28 +115,36 @@ inline size_t AlignSize(size_t size, size_t alignment) {
 
 ///////////////////
 
-/// A container that takes substructures with a subset of the members of ProxyRef in its
-/// template parameters T..., and stores each substructure in a separate array.
-/// The substructure arrays are stored contiguously in memory, aligned to the size of a cacheline.
-template <typename ProxyRef, auto Mapping, typename... T> struct PartitionedContainerContiguous {
+/// A container that takes substructures with a subset of the members of
+/// ProxyRef in its template parameters T..., and stores each substructure in a
+/// separate array. The substructure arrays are stored contiguously in memory,
+/// aligned to the size of a cacheline.
+template <typename ProxyRef, auto Mapping, typename... T>
+struct PartitionedContainerContiguous {
 private:
-  static_assert(nsdms(^^ProxyRef).size() == (... + nsdms(^^T).size()),
-                "PartitionedContainerContiguous: Total number of members in substructures"
-                "must equal number of members in ProxyRef");
+  static_assert(
+      nsdms(^^ProxyRef).size() == (... + nsdms(^^T).size()),
+      "PartitionedContainerContiguous: Total number of members in substructures"
+      "must equal number of members in ProxyRef");
   struct Partitions;
   consteval {
-    define_aggregate(^^Partitions, { data_member_spec(substitute(^^std::span, {^^T}))... });
+    define_aggregate(
+        ^^Partitions,
+        {
+            data_member_spec(substitute(^^std::span, {
+                                                         ^^T}))...});
   }
 
   Partitions p;
   std::byte *storage;
   size_t n;
 
-  public:
+public:
   PartitionedContainerContiguous(size_t n, size_t alignment) : n(n) {
     // Allocate each partition
     size_t total_size = (0 + ... + AlignSize(n * sizeof(T), alignment));
-    storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
+    storage =
+        static_cast<std::byte *>(std::aligned_alloc(alignment, total_size));
 
     // Assign each partition to its location in the storage vector
     size_t offset = 0;
@@ -140,25 +153,34 @@ private:
       constexpr auto m = nsdms(^^Partitions)[I];
 
       // https://learn.microsoft.com/en-us/cpp/standard-library/new-operators?view=msvc-170#op_new_arr
-      p.[: m :] = std::span<MemType>(std::launder(reinterpret_cast<MemType*>(new (&storage[offset]) MemType[n])), n);
+      p.[:m:] = std::span<MemType>(std::launder(reinterpret_cast<MemType *>(
+                                       new (&storage[offset]) MemType[n])),
+                                   n);
       offset += AlignSize(p.[:m:].size_bytes(), alignment);
     }
   }
 
-  #pragma clang diagnostic ignored "-Wreturn-type"
+#pragma clang diagnostic ignored "-Wreturn-type"
   inline ProxyRef operator[](const size_t index) const {
     return [&]<size_t... Is>(std::index_sequence<Is...>) constexpr -> ProxyRef {
       constexpr auto partitions = nsdms(^^Partitions);
-      return ProxyRef{ p.[: partitions[Mapping[Is].first] :][index]
-                          .[: nsdms(template_arguments_of(type_of(partitions[Mapping[Is].first]))[0])
-                              [Mapping[Is].second] :]... };
-    }(std::make_index_sequence< nsdms(^^ProxyRef).size()>());
+      return ProxyRef{
+          p.[:partitions[Mapping[Is].first]:][index].[:nsdms(template_arguments_of(
+                                                           type_of(
+                                                               partitions
+                                                                   [Mapping[Is]
+                                                                        .first]))
+                                                                 [0])
+                                                           [Mapping[Is].second
+      ]:]...};
+    }(std::make_index_sequence<nsdms(^^ProxyRef).size()>());
   }
 
   size_t size() const { return n; }
 
   static std::string to_string() {
-    return std::string("PartitionedContainerContiguous") + GetSplitOpsString<T...>();
+    return std::string("PartitionedContainerContiguous") +
+           GetSplitOpsString<T...>();
   }
 
   ~PartitionedContainerContiguous() {
@@ -167,7 +189,8 @@ private:
       using MemType = T...[I];
       constexpr auto m = nsdms(^^Partitions)[I];
 
-      // Need to deallocate each element individually because it is constructed using placement new.
+      // Need to deallocate each element individually because it is constructed
+      // using placement new.
       for (size_t i = n - 1; i == 0; --i) {
         p.[:m:][i].~MemType();
       }
@@ -177,19 +200,20 @@ private:
   }
 };
 
-
-/// A container that takes substructures with a subset of the members of ProxyRef in its
-/// template parameters T..., and stores each substructure in a separate array.
-/// The substructures are stored in separate arrays aligned to cacheline size,
-/// in different memory locations.
-template <typename ProxyRef, auto Mapping, typename... T> struct PartitionedContainer {
+/// A container that takes substructures with a subset of the members of
+/// ProxyRef in its template parameters T..., and stores each substructure in a
+/// separate array. The substructures are stored in separate arrays aligned to
+/// cacheline size, in different memory locations.
+template <typename ProxyRef, auto Mapping, typename... T>
+struct PartitionedContainer {
 private:
   static_assert(nsdms(^^ProxyRef).size() == (... + nsdms(^^T).size()),
                 "PartitionedContainer: Total number of members in partitions "
                 "must equal number of members in ProxyRef");
   struct Partitions;
   consteval {
-    define_aggregate(^^Partitions, { data_member_spec(add_pointer(^^T))... });
+    define_aggregate(^^Partitions, {
+                                       data_member_spec(add_pointer(^^T))...});
   }
 
   Partitions p;
@@ -199,19 +223,26 @@ public:
   PartitionedContainer(size_t n, size_t alignment) : n(n) {
     // Allocate each partition
     template for (constexpr auto m : nsdms(^^Partitions)) {
-      p.[: m :] = static_cast<typename[: type_of(m) :]>(
-        std::aligned_alloc(alignment,
-                           AlignSize(n * sizeof(typename[: remove_pointer(type_of(m)) :]), alignment)));
+      p.[:m:] = static_cast<typename[:type_of(m):]>(std::aligned_alloc(
+                  alignment,
+                  AlignSize(n * sizeof(typename[:remove_pointer(type_of(m)):]),
+                            alignment)));
     }
   }
 
-  #pragma clang diagnostic ignored "-Wreturn-type"
+#pragma clang diagnostic ignored "-Wreturn-type"
   inline ProxyRef operator[](const size_t index) const {
     return [&]<size_t... Is>(std::index_sequence<Is...>) constexpr -> ProxyRef {
       constexpr auto partitions = nsdms(^^Partitions);
-      return ProxyRef{ p.[: partitions[Mapping[Is].first] :][index]
-                          .[: nsdms(remove_pointer(type_of(partitions[Mapping[Is].first])))[Mapping[Is].second] :]... };
-    }(std::make_index_sequence< nsdms(^^ProxyRef).size()>());
+      return ProxyRef{
+          p.[:partitions[Mapping[Is].first]:][index].[:nsdms(remove_pointer(
+                                                           type_of(
+                                                               partitions
+                                                                   [Mapping[Is]
+                                                                        .first])))
+                                                           [Mapping[Is].second
+      ]:]...};
+    }(std::make_index_sequence<nsdms(^^ProxyRef).size()>());
   }
 
   size_t size() const { return n; }
@@ -223,7 +254,7 @@ public:
   ~PartitionedContainer() {
     // Deallocate each partition
     template for (constexpr auto m : nsdms(^^Partitions)) {
-      std::free(p.[: m :]);
+      std::free(p.[:m:]);
     }
   }
 };

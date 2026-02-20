@@ -206,22 +206,41 @@ template <typename T> void VerifyAlignment0_1_23(const T &p, const std::string &
   }
 }
 
+template <size_t... Is> struct SubStruct;
+
+consteval { SplitStruct<S, SubStruct>(SplitOp({0, 1}), SplitOp({2, 3})); }
+consteval {
+  SplitStruct<S, SubStruct>(SplitOp({0}), SplitOp({1}), SplitOp({2}),
+                            SplitOp({3}));
+}
+
+constexpr size_t alignment = 64;
+
 int main() {
-  ////// Python generated structures
-  using PyContainerContiguous01_23 = PartitionedContainerContiguous01_23;
-  PyContainerContiguous01_23 pc1_01_23(1000, alignment), pc2_01_23(1000, alignment);
-  VectorSum(pc1_01_23, pc2_01_23, "PyContainerContiguous01_23");
-  VerifyAllocation01_23(pc1_01_23, "PyContainerContiguous01_23");
+  ////// Reflection generated containers
+  using RContiguousContainer01_23 = PartitionedContainerContiguous<
+      SRef, Mapping({{0, 0}, {0, 1}, {1, 0}, {1, 1}}).data(),
+      SubStruct<0, 1>, SubStruct<2, 3>>;
+  RContiguousContainer01_23 rc1_01_23(1000, alignment), rc2_01_23(1000, alignment);
+  VectorSum(rc1_01_23, rc2_01_23, "RContiguousContainer01_23");
+  VerifyAllocation01_23(rc1_01_23, "RContiguousContainer01_23");
 
-  using PyContainerContiguous0_1_2_3 = PartitionedContainerContiguous0_1_2_3;
-  PyContainerContiguous0_1_2_3 pc1_0_1_2_3(1000, alignment);
-  VerifyAllocation0_1_2_3(pc1_0_1_2_3, "PyContainerContiguous0_1_2_3");
+  using RContiguousContainer0_1_2_3 = PartitionedContainerContiguous<
+      SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
+      SubStruct<0>, SubStruct<1>, SubStruct<2>, SubStruct<3>>;
+  RContiguousContainer0_1_2_3 rc1_0_1_2_3(1000, alignment);
+  VerifyAllocation0_1_2_3(rc1_0_1_2_3, "RContiguousContainer0_1_2_3");
 
-  using PyContainerContiguous0_1_23 = PartitionedContainerContiguous0_1_23;
-  PyContainerContiguous0_1_23 pc1_0_1_23(1000, alignment);
-  VerifyAlignment0_1_23(pc1_0_1_23, "PyContainerContiguous0_1_23");
+  using RContiguousContainer0_1_23 = PartitionedContainerContiguous<
+      SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
+      SubStruct<0>, SubStruct<1>, SubStruct<2>, SubStruct<3>>;
+  RContiguousContainer0_1_23 rc1_0_1_23(1000, alignment);
+  VerifyAlignment0_1_23(rc1_0_1_23, "RContiguousContainer0_1_23");
 
-  using PyContainer0_1_23 = PartitionedContainer0_1_23;
-  PyContainer0_1_23 p1_0_1_23(1000, alignment);
-  VerifyAlignment0_1_23(p1_0_1_23, "PyContainer0_1_23");
+  using RContainer0_1_23 = PartitionedContainer<
+      SRef, Mapping({{0, 0}, {1, 0}, {2, 0}, {3, 0}}).data(),
+      SubStruct<0>, SubStruct<1>, SubStruct<2>, SubStruct<3>>;
+  RContainer0_1_23 r1_0_1_23(1000, alignment);
+  VerifyAlignment0_1_23(r1_0_1_23, "RContainer0_1_23");
+
 }
