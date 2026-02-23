@@ -6,6 +6,7 @@
 # Array of Structures (AoS)-like interface via proxy reference structs.
 
 from itertools import permutations
+import itertools
 import numpy as np
 import argparse
 
@@ -182,14 +183,9 @@ def generate_partitions(members, contiguous, only=None):
     """
 
     def permute_elements_in_subset(partition):
-        if any(len(p) > 1 for p in partition):
-            for i, p in enumerate(partition):
-                if len(p) > 1:
-                    for subset_perm in permutations(p):
-                        partition[i] = list(subset_perm)
-                        yield partition
-        else:
-            yield partition
+        permutations_per_subset = [permutations(subset) for subset in partition]
+        for permuted_partition in itertools.product(*permutations_per_subset):
+            yield [list(subset) for subset in permuted_partition]
 
     if only:
         for partition_string in only:
