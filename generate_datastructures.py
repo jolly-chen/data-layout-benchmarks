@@ -47,11 +47,10 @@ def define_contiguous_partitions_struct(partition, struct_name_base):
     :param partition: List of partitions, each a list of member indices
     :param struct_name_base: Base name of the struct
     """
-    s = "struct Partitions {\n"
+    s = ""
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base)
         s += f"    std::span<{memtype}> p{si};\n"
-    s += "  };"
     return s
 
 
@@ -66,10 +65,10 @@ def assign_contiguous_partitions(partition, struct_name_base):
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base)
         s += (
-            f"        p.p{si} = std::span<{memtype}>("
+            f"        p{si} = std::span<{memtype}>("
             + f"std::launder(reinterpret_cast<{memtype}*>(new (&storage[offset]) {memtype}[n])), n);\n"
         )
-        s += f"        offset += AlignSize(p.p{si}.size_bytes(), alignment);\n"
+        s += f"        offset += AlignSize(p{si}.size_bytes(), alignment);\n"
     return s
 
 
@@ -83,7 +82,7 @@ def deallocate_contiguous_partitions(partition, struct_name_base):
     s = "        for (size_t i = n - 1; i == 0; --i) {\n"
     for si, subset in enumerate(partition):
         memtype = subparticle_string(subset, struct_name_base)
-        s += f"              p.p{si}[i].~{memtype}();\n"
+        s += f"              p{si}[i].~{memtype}();\n"
     s += "        }\n\n"
     s += "        std::free(storage);"
     return s
@@ -96,10 +95,9 @@ def define_partitions_struct(partition, struct_name_base):
     :param partition: List of partitions, each a list of member indices
     :param struct_name_base: Base name of the struct
     """
-    s = "struct Partitions {\n"
+    s = ""
     for si, subset in enumerate(partition):
         s += f"    {subparticle_string(subset, struct_name_base)} *p{si};\n"
-    s += "  };"
     return s
 
 
@@ -115,7 +113,7 @@ def assign_partitions(partition, struct_name_base):
         memtype = subparticle_string(subset, struct_name_base)
         if si != 0:
             s += "\n"
-        s += f"        p.p{si} = static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment)));"
+        s += f"        p{si} = static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment)));"
     return s
 
 
@@ -130,7 +128,7 @@ def deallocate_partitions(partition, struct_name_base):
     for si, subset in enumerate(partition):
         if si != 0:
             s += "\n"
-        s += f"        std::free(p.p{si});"
+        s += f"        std::free(p{si});"
     return s
 
 
@@ -147,7 +145,7 @@ def assign_proxyref(members, partition, struct_name_base):
         for im, m in enumerate(subset):
             mapping[m] = [si, im]
 
-    s = f"return {struct_name_base}Ref{{ {', '.join([f'p.p{si}[index].{members[m][1]}' for m, (si, im) in enumerate(mapping)])} }};"
+    s = f"return {struct_name_base}Ref{{ {', '.join([f'p{si}[index].{members[m][1]}' for m, (si, im) in enumerate(mapping)])} }};"
     return s
 
 
@@ -250,8 +248,7 @@ def write_contiguous_partition(
     f.write(
         f"""
 struct PartitionedContainerContiguous{partition_string} {{
-    { define_contiguous_partitions_struct(partition, struct_name_base) }
-    Partitions p;
+{ define_contiguous_partitions_struct(partition, struct_name_base) }
     std::byte *storage;
     size_t n;
 
@@ -281,9 +278,7 @@ struct PartitionedContainerContiguous{partition_string} {{
     )
 
 
-def write_partition(
-    f, struct_name_base, partition_string, partition, members
-):
+def write_partition(f, struct_name_base, partition_string, partition, members):
     """
     Write a structure definition for a container that stores partitions, not necessarily contiguous,
     each with a subset of the data members in the original structure. The container provides a
@@ -298,9 +293,7 @@ def write_partition(
     f.write(
         f"""
 struct PartitionedContainer{partition_string} {{
-    { define_partitions_struct(partition, struct_name_base) }
-
-    Partitions p;
+{ define_partitions_struct(partition, struct_name_base) }
     size_t n;
 
     static std::string to_string() {{ return "PartitionedContainer{partition_string}"; }}
@@ -469,9 +462,9 @@ def write_test_partitions():
                 ["".join(str(m) for m in subset) for subset in partition]
             )
             write_contiguous_partition(
-                f, struct_name_base, partition_string, partition, members)
-            write_partition(
-                f, struct_name_base, partition_string, partition, members)
+                f, struct_name_base, partition_string, partition, members
+            )
+            write_partition(f, struct_name_base, partition_string, partition, members)
 
             for subset in partition:
                 if subset not in s_list:
