@@ -30,11 +30,11 @@ def generate_struct_definition(struct_name, members, type_modifier=""):
     return "\n".join(lines)
 
 
-def subparticle_string(op, struct_name_base):
+def substructure_string(op, struct_name_base):
     """
-    Get the subparticle struct name for a given split operation.
+    Get the substructure struct name for a given split operation.
 
-    :param op: List of member indices from the original struct that need to be included in the subparticle
+    :param op: List of member indices from the original struct that need to be included in the substructure
     :param struct_name_base: Base name of the struct
     """
     return f"Sub{struct_name_base}{''.join(str(m) for m in op)}"
@@ -49,7 +49,7 @@ def define_contiguous_partitions_struct(partition, struct_name_base):
     """
     s = ""
     for si, subset in enumerate(partition):
-        memtype = subparticle_string(subset, struct_name_base)
+        memtype = substructure_string(subset, struct_name_base)
         s += f"    std::span<{memtype}> p{si};\n"
     return s
 
@@ -63,7 +63,7 @@ def assign_contiguous_partitions(partition, struct_name_base):
     """
     s = "        size_t offset = 0;\n"
     for si, subset in enumerate(partition):
-        memtype = subparticle_string(subset, struct_name_base)
+        memtype = substructure_string(subset, struct_name_base)
         s += (
             f"        p{si} = std::span<{memtype}>("
             + f"std::launder(reinterpret_cast<{memtype}*>(new (&storage[offset]) {memtype}[n])), n);\n"
@@ -81,7 +81,7 @@ def deallocate_contiguous_partitions(partition, struct_name_base):
     """
     s = "        for (size_t i = n - 1; i == 0; --i) {\n"
     for si, subset in enumerate(partition):
-        memtype = subparticle_string(subset, struct_name_base)
+        memtype = substructure_string(subset, struct_name_base)
         s += f"              p{si}[i].~{memtype}();\n"
     s += "        }\n\n"
     s += "        std::free(storage);"
@@ -97,7 +97,7 @@ def define_partitions_struct(partition, struct_name_base):
     """
     s = ""
     for si, subset in enumerate(partition):
-        s += f"    {subparticle_string(subset, struct_name_base)} *p{si};\n"
+        s += f"    {substructure_string(subset, struct_name_base)} *p{si};\n"
     return s
 
 
@@ -110,7 +110,7 @@ def assign_partitions(partition, struct_name_base):
     """
     s = ""
     for si, subset in enumerate(partition):
-        memtype = subparticle_string(subset, struct_name_base)
+        memtype = substructure_string(subset, struct_name_base)
         if si != 0:
             s += "\n"
         s += f"        p{si} = static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment)));"
@@ -256,7 +256,7 @@ struct PartitionedContainerContiguous{partition_string} {{
 
     PartitionedContainerContiguous{partition_string}(size_t n, size_t alignment) : n(n) {{
         // Allocate each partition
-        size_t total_size = 0 + { " + ".join([ f"AlignSize(n * sizeof({subparticle_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
+        size_t total_size = 0 + { " + ".join([ f"AlignSize(n * sizeof({substructure_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
         storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
 
         // Assign each partition to its location in the storage vector
@@ -488,6 +488,12 @@ def write_test_partitions():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--data_spec",
+        type=str,
+        help="Data member specification for which to generate data structures",
+        required=True,
+    )
+    parser.add_argument(
         "--batch_size",
         type=int,
         help="Set batch size for partition generation",
@@ -524,17 +530,11 @@ if __name__ == "__main__":
         start = args.batch_num * args.batch_size
         end = start + args.batch_size
 
-    data_members = [
-        ("int", "id"),
-        ("double", "pt"),
-        ("double", "eta"),
-        ("double", "phi"),
-        ("double", "e"),
-        ("char", "charge"),
-        ("std::array<std::array<double, 3>, 3>", "posCovMatrix"),
-    ]
-
-    struct_name_base = "Particle"
+    with open(args.data_spec, "r") as f:
+        lines = f.readlines()
+        struct_name_base = lines[0].strip()
+        data_members = [line.strip().split() for line in lines[1:]]
+        print(data_members)
 
     write_partitioned_structs(
         struct_name_base,
