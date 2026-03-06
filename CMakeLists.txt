@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(data_layout_benchmarks)
 
-set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD 23)
 
 add_compile_options(-O3 -Wall -Wextra)
 

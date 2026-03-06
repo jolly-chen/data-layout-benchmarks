@@ -6,6 +6,7 @@
 #include <iostream>
 #include <type_traits>
 #include <vector>
+#include <ranges>
 
 inline size_t AlignSize(size_t size, size_t alignment) {
   return (size + alignment - 1) / alignment * alignment;
@@ -20,7 +21,7 @@ public:
   }
   const std::string &GetCmdOption(const std::string &option) const {
     std::vector<std::string>::const_iterator itr;
-    itr = std::find(this->tokens.begin(), this->tokens.end(), option);
+    itr = std::ranges::find(this->tokens, option);
     if (itr != this->tokens.end() && ++itr != this->tokens.end()) {
       return *itr;
     }
@@ -29,8 +30,7 @@ public:
   }
   /// @author iain
   bool CmdOptionExists(const std::string &option) const {
-    return std::find(this->tokens.begin(), this->tokens.end(), option) !=
-           this->tokens.end();
+    return std::ranges::find(this->tokens, option) != this->tokens.end();
   }
 
 private:
