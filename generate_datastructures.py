@@ -507,7 +507,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--contiguous",
-        action=argparse.BooleanOptionalAction,
+        action='store_true',
         default=False,
         help="Generate contiguous partitioned structures",
     )
