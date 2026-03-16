@@ -5,6 +5,7 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import argparse
 import os
@@ -12,13 +13,14 @@ import matplotlib
 import matplotlib.ticker as ticker
 
 from itertools import permutations
-
-from sklearn import metrics
+from pathlib import Path
 
 ###########
 # HELPERS #
 ###########
 
+def savefig(fig, output_file):
+    fig.savefig(output_file, dpi=1200)
 
 def get_agg_value(df, val, aggregate):
     """
@@ -62,6 +64,8 @@ def get_partition_from_val(df, val, aggregate):
 
     return partition
 
+def get_val_from_partition(df, partition, val, aggregate):
+    return get_agg_value(df[df["container"].str.contains(partition)], val, aggregate).iloc[0]
 
 def is_overlapping_1D(xmin1, xmax1, xmin2, xmax2):
     """
@@ -151,30 +155,69 @@ def adjust_annotations(ax, annotations):
                 # Move the current box upward:
                 update_annotation_positions(
                     i,
-                    annotations[i].xyann[0],
-                    j_textbox_ymax + 2 * (i_textbox_ymax - i_textbox_ymin),
+                    annotations[i].xyann[0] + .05 * (j_textbox_xmax - j_textbox_xmin),
+                    j_textbox_ymax + 2.6 * (i_textbox_ymax - i_textbox_ymin),
                     annotations[i].zorder,
                 )
 
     # From top to bottom, increase the zorder so they are drawn latter
-    sorted_idx = np.lexsort((coords[:, 0], -coords[:, 1]))
-    for i in sorted_idx:
-        update_annotation_positions(
-            i,
-            annotations[i].xyann[0],
-            annotations[i].xyann[1],
-            len(annotations) + i,
-        )
+    sorted_idx = np.argsort(-coords[:, 1])
+    for ii, i in enumerate(sorted_idx):
+        if coord[1] > ax.get_ylim()[1]:
+            update_annotation_positions(
+                i,
+                annotations[i].xyann[0] + .4 * (j_textbox_xmax - j_textbox_xmin),
+                ax.get_ylim()[1] * 0.75,
+                len(annotations) + ii,
+            )
+        else:
+            update_annotation_positions(
+                i,
+                annotations[i].xyann[0],
+                annotations[i].xyann[1],
+                len(annotations) + ii,
+            )
+        annotations[i].draggable()
+
+
+def used_alone(partition, used):
+    """Are the used members alone in their subsets?"""
+    p_list = partition.split("_")
+    # Find subset each used member belongs to
+    used_idx = [i for u in used for i, p in enumerate(p_list) if u in p]
+    return all(len(p_list[i]) == 1 for i in used_idx)
+
+
+def used_not_mixed_with_unused(partition, used):
+    """Are the used members isolated from the unused members?"""
+    p_list = partition.split("_")
+
+    # Find subset each used member belongs to
+    used_idx = [i for u in used for i, p in enumerate(p_list) if u in p]
+
+    # For each subset that contains used members, check if it only contains used members
+    for ui in used_idx:
+        n_used = sum(1 for member in p_list[ui] if member in used)
+        if n_used != len(p_list[ui]):
+            return False
+
+    return True
+
+
+def used_together(partition, used):
+    """Are the used members all in the same partition?"""
+    p_list = partition.split("_")
+    used_idx = [i for u in used for i, p in enumerate(p_list) if u in p]
+    return all(used_idx[0] == pi for pi in used_idx)
 
 
 #############
 # HISTOGRAM #
 #############
 
-
-def annotate_partition(ax, x, y, text, color, annotations):
+def annotate_point(ax, x, y, text, color, annotations):
     """
-    Annotate a point in the histogram.
+    Annotate a bar in the histogram.
 
     :param ax: Matplotlib Axes object
     :param x: x-coordinate of the point to annotate
@@ -186,7 +229,7 @@ def annotate_partition(ax, x, y, text, color, annotations):
     a = ax.annotate(
         text,
         xy=(x, y),
-        xytext=(x, y * 2),
+        xytext=(x, y * 1.2 if y < 10e6 else y * 1.001),
         arrowprops=dict(arrowstyle="fancy", facecolor=color, alpha=0.8),
         bbox=dict(boxstyle="square", fc="w", alpha=0.8),
         fontsize=10,
@@ -197,7 +240,7 @@ def annotate_partition(ax, x, y, text, color, annotations):
     annotations.append(a)
 
 
-def annotate_minmax(ax, df_bp, heights, annotations, aggregate):
+def annotate_minmax(ax, df_bp, heights, annotations, aggregate, verbose=True):
     """
     Annotate the minimum and maximum average runtimes in the histogram
     with their corresponding partition.
@@ -207,31 +250,40 @@ def annotate_minmax(ax, df_bp, heights, annotations, aggregate):
     :param heights: Heights of the histogram bars
     :param annotations: List to store the created annotations
     :param aggregate: Metric to aggregate over (min, max, avg)
+    :param verbose: Whether to include time and partition information in the annotation text
     """
     max_val = get_agg_value(df_bp, "time", aggregate).max()
     max_partition = get_partition_from_val(df_bp, max_val, aggregate)
-    annotate_partition(
+    annotate_point(
         ax,
         max_val,
         heights[-1],
-        f"Max: {max_val:.2f}\n({''.join(filter(lambda x: not x.isalpha(), max_partition))})",
+        (
+            f"Max: {max_val:.2f}\n({''.join(filter(lambda x: not x.isalpha(), max_partition))})"
+            if verbose
+            else f"Max"
+        ),
         "k",
         annotations,
     )
 
     min_val = get_agg_value(df_bp, "time", aggregate).min()
     min_partition = get_partition_from_val(df_bp, min_val, aggregate)
-    annotate_partition(
+    annotate_point(
         ax,
         min_val,
         heights[0],
-        f"Min: {min_val:.2f}\n({''.join(filter(lambda x: not x.isalpha(), min_partition))})",
+        (
+            f"Min: {min_val:.2f}\n({''.join(filter(lambda x: not x.isalpha(), min_partition))})"
+            if verbose
+            else f"Min"
+        ),
         "k",
         annotations,
     )
 
 
-def annotate_common(ax, df, edges, annotations, aggregate):
+def annotate_common(ax, df, edges, annotations, aggregate, verbose=True):
     """
     Annotate the average runtimes of common partitioning schemes (AoS and SoA) in the histogram.
     Parts of the histogram that include AoS layouts with reordered data members are highlighted.
@@ -242,13 +294,8 @@ def annotate_common(ax, df, edges, annotations, aggregate):
     :param color: Color of the annotation
     :param annotations: List to store the created annotations
     :param aggregate: Metric to aggregate over (min, max, avg)
+    :param verbose: Whether to include time and partition information in the annotation text
     """
-    container_base_name = (
-        "PartitionedContainerContiguous"
-        if "PartitionedContainerContiguous" in df["container"].iloc[0]
-        else "PartitionedContainer"
-    )
-
     # AoS
     aos_vals = get_agg_value(
         df[df["container"].isin([f"{container_base_name}{c}" for c in aos_containers])],
@@ -265,11 +312,15 @@ def annotate_common(ax, df, edges, annotations, aggregate):
     )
 
     if not aos_vals.empty:
-        annotate_partition(
+        annotate_point(
             ax,
             aos_vals.iloc[0],
             heights[int(np.digitize(aos_vals.iloc[0], edges)) - 1],
-            f"AoS: {aos_vals.iloc[0]:.2f}\n({aos_containers[0]})",
+            (
+                f"AoS: {aos_vals.iloc[0]:.2f}\n({aos_containers[0]})"
+                if verbose
+                else f"AoS"
+            ),
             aos_color,
             annotations,
         )
@@ -290,73 +341,292 @@ def annotate_common(ax, df, edges, annotations, aggregate):
     )
 
     if not soa_vals.empty:
-        annotate_partition(
+        annotate_point(
             ax,
             soa_vals.iloc[0],
             heights[int(np.digitize(soa_vals.iloc[0], edges)) - 1],
-            f"SoA: {soa_vals.iloc[0]:.2f}\n({soa_containers[0]})",
+            (
+                f"SoA: {soa_vals.iloc[0]:.2f}\n({soa_containers[0]})"
+                if verbose
+                else f"SoA"
+            ),
             soa_color,
             annotations,
         )
 
 
-def plot_runtime_histogram(file, df, output_dir, aggregate):
+def plot_histogram(ax, df, problem_size, benchmark, aggregate, annotations, annotate, verbose=True):
+    df_bp = df[(df["benchmark"] == benchmark) & (df["problem_size"] == problem_size)]
+    time_vals = get_agg_value(df_bp, "time", aggregate)
+    heights, edges, _ = ax.hist(
+        time_vals,
+        bins="auto",
+        color=other_color,
+        align="mid",
+        label="Other Layouts",
+    )
+
+    if annotate == "default":
+        annotate_common(ax, df_bp, edges, annotations, aggregate, verbose)
+    elif annotate == "guidelines":
+        ut_containers = df_bp[
+            df_bp["container"].isin(
+                [
+                    c
+                    for c in df_bp["container"]
+                    if used_together(
+                        c.replace(container_base_name, ""), ["1", "2", "3", "4"]
+                    )
+                ]
+            )
+        ]
+        ut_vals = get_agg_value(
+            ut_containers,
+            "time",
+            aggregate,
+        )
+        ax.hist(
+            ut_vals.values,
+            bins=edges,
+            color=ut_color,
+            align="mid",
+            label="Used Together",
+        )
+
+        unm_containers = df_bp[
+            df_bp["container"].isin(
+                [
+                    c
+                    for c in df_bp["container"]
+                    if used_not_mixed_with_unused(
+                        c.replace(container_base_name, ""), ["1", "2", "3", "4"]
+                    )
+                ]
+            )
+        ]
+        unm_vals = get_agg_value(
+            unm_containers,
+            "time",
+            aggregate,
+        )
+        ax.hist(
+            unm_vals.values,
+            bins=edges,
+            color=unm_color,
+            align="mid",
+            label="Used not mixed with Unused",
+        )
+
+        median_unm = unm_vals.median()
+        max_95_percentile_unm = np.quantile(np.sort(unm_vals), 0.94)
+        median_partition_unm = np.digitize(median_unm, np.sort(time_vals)) - 1
+        max95_partition_unm = np.digitize(max_95_percentile_unm, np.sort(time_vals)) - 1
+
+        print(
+            f"{benchmark} - Used not mixed with Unused:\n"
+            f"\tmax95 ({max_95_percentile_unm}, {max95_partition_unm}) {max95_partition_unm / len(time_vals) * 100:.2f}%\n"
+            f"\tmedian ({median_unm}, {median_partition_unm}) {median_partition_unm / len(time_vals) * 100:.2f}%"
+        )
+
+        ua_vals = get_agg_value(
+            df_bp[
+                df_bp["container"].isin(
+                    [
+                        c
+                        for c in df_bp["container"]
+                        if used_alone(
+                            c.replace(container_base_name, ""), ["1", "2", "3", "4"]
+                        )
+                    ]
+                )
+            ],
+            "time",
+            aggregate,
+        )
+        ax.hist(
+            ua_vals.values,
+            bins=edges,
+            color=ua_color,
+            align="mid",
+            label="SoA of Used Members",
+        )
+        max_95_percentile_ua = np.quantile(np.sort(ua_vals), 0.95)
+        median_ua = ua_vals.median()
+        max95_partition_ua = np.digitize(max_95_percentile_ua, np.sort(time_vals)) - 1
+        median_partition_ua = np.digitize(median_ua, np.sort(time_vals)) - 1
+
+
+    ax.set_ylabel("Frequency", fontsize=14)
+    ax.set_yscale("symlog")
+    y_minor = matplotlib.ticker.LogLocator(
+        base=10.0, subs=np.arange(1, 10) * 0.1, numticks=10
+    )
+    ax.yaxis.set_minor_locator(y_minor)
+    ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+    ax.grid(axis="y", alpha=0.75)
+
+    ax.set_xlabel(f'Runtime ({df["time_unit"].iloc[0]})', fontsize=14)
+    ax.legend(loc="best", fontsize=8)
+    return heights, edges
+
+
+def plot_runtime_histogram_max_psize_all_archs(
+    files, dfs, output_dir, aggregate, annotate
+):
     """
     Plot runtime histograms for each benchmark and problem size.
 
     :param df: Dictionary of DataFrames keyed by file name
     :param output_dir: Directory to save the output plots
     """
-    fig = plt.figure(figsize=(7 * len(df["problem_size"].unique()), 5))
+    plt.rcParams["text.usetex"] = True
+    fig = plt.figure(figsize=(12, 3 * len(files)))
+    for row, (file, df) in enumerate(zip(files, dfs)):
+        problem_size = df["problem_size"].max()
+
+        for ib, benchmark in enumerate(df["benchmark"].unique()):
+            ax = fig.add_subplot(
+                len(files),
+                len(df["benchmark"].unique()),
+                row * len(df["benchmark"].unique()) + ib + 1,
+            )
+            ax.set_title(benchmark, fontsize=18)
+            plot_histogram(ax, df, problem_size, benchmark, aggregate, [], annotate)
+            if ib == 0:
+                arch_name = (
+                    Path(file).stem.split("_")[0].upper()
+                    + " "
+                    + Path(file).stem.split("_")[1].title()
+                )
+                ax.set_ylabel(
+                    r"\textbf{\Large{" + arch_name + r"}}" + "\nFrequency", fontsize=18
+                )
+
+    fig.tight_layout()
+    output_file = os.path.join(
+        output_dir,
+        f"allarchs_maxpsize_{aggregate}_runtime_histogram_{annotate}.{fmt}",
+    )
+    print(f"Saving {output_file}...")
+    savefig(fig, output_file)
+
+
+def plot_runtime_histogram_max_psize(
+    file, df, output_dir, aggregate, annotate="default"
+):
+    """
+    Plot runtime histograms for each benchmark and problem size.
+
+    :param df: Dictionary of DataFrames keyed by file name
+    :param output_dir: Directory to save the output plots
+    """
+    fig = plt.figure(figsize=(7 * len(df["benchmark"].unique()), 4))
+    problem_size = df["problem_size"].max()
+
+    for ib, benchmark in enumerate(df["benchmark"].unique()):
+        ax = fig.add_subplot(1, len(df["problem_size"].unique()), ib + 1)
+        ax.set_title(benchmark, fontsize=18)
+        plot_histogram(ax, df, problem_size, benchmark, aggregate, annotate)
+
+    fig.tight_layout()
+    output_file = os.path.join(
+        output_dir,
+        f"{Path(file).stem}_maxpsize_{aggregate}_runtime_histogram_{annotate}.{fmt}",
+    )
+    print(f"Saving {output_file}...")
+    savefig(fig, output_file)
+
+
+def plot_runtime_histogram_per_benchmark(
+    file, df, output_dir, aggregate, annotate="default"
+):
+    """
+    Plot runtime histograms for each benchmark and problem size.
+
+    :param df: Dictionary of DataFrames keyed by file name
+    :param output_dir: Directory to save the output plots
+    """
+    fig = plt.figure(figsize=(7 * len(df["problem_size"].unique()), 4))
 
     for benchmark in df["benchmark"].unique():
         fig.suptitle(f"Runtime Distribution of {benchmark}", fontsize=20)
 
         for pi, problem_size in enumerate(df["problem_size"].unique()):
             ax = fig.add_subplot(1, len(df["problem_size"].unique()), pi + 1)
-            ax.set_title(f"Problem Size: {problem_size}", fontsize=18)
-            annotations = []
-
-            df_bp = df[
-                (df["benchmark"] == benchmark) & (df["problem_size"] == problem_size)
-            ]
-            heights, edges, _ = plt.hist(
-                get_agg_value(df_bp, "time", aggregate),
-                bins="auto",
-                color=other_color,
-                align="mid",
-                label="Other Layouts",
-            )
-
-            annotate_minmax(ax, df_bp, heights, annotations, aggregate)
-            annotate_common(ax, df_bp, edges, annotations, aggregate)
-
-            ax.set_ylabel("Frequency", fontsize=14)
-            ax.set_yscale("symlog")
-            y_minor = matplotlib.ticker.LogLocator(
-                base=10.0, subs=np.arange(1, 10) * 0.1, numticks=10
-            )
-            ax.yaxis.set_minor_locator(y_minor)
-            ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-            ax.grid(axis="y", alpha=0.75)
-
-            ax.set_xlabel(f'Runtime ({df["time_unit"].iloc[0]})', fontsize=14)
-            ax.legend(loc="best", bbox_to_anchor=(0, 0.7, 1, 0.3))
-            adjust_annotations(ax, annotations)
+            ax.set_title(f"Array Size: {problem_size}", fontsize=18)
+            plot_histogram(ax, df, problem_size, benchmark, aggregate, annotate)
+            ax.set_ylim(top=15e4)
 
         fig.tight_layout()
-        print(f"Saving {file}_{benchmark}_{aggregate}_runtime_histogram.pdf...")
-        fig.savefig(
-            os.path.join(
-                output_dir, f"{file}_{benchmark}_{aggregate}_runtime_histogram.pdf"
-            )
+        output_file = os.path.join(
+            output_dir,
+            f"{Path(file).stem}_{benchmark}_{aggregate}_runtime_histogram_{annotate}.{fmt}",
         )
+        print(f"Saving {output_file}...")
+        savefig(fig, output_file)
 
         fig.clf()  # Clear the figure to free memory for the next plot
 
 
+def plot_runtime_histogram_all_minmax(files, dfs, output_dir, aggregate):
+    def get_rank(val, sorted_vals):
+        return int(np.digitize(val, sorted_vals)) / len(sorted_vals) * 100
+
+    fig = plt.figure(figsize=(14, 4))
+    arch_names = ['Zen2', 'Zen4', 'HSW', 'SKL']
+    minmax = {}
+
+    for di, df in enumerate(dfs):
+        for benchmark in df["benchmark"].unique()[:2]:
+            for pi, ps in enumerate(df["problem_size"].unique()):
+                df_bp = df[(df["benchmark"] == benchmark) & (df["problem_size"] == ps)]
+                time_vals = get_agg_value(df_bp, "time", aggregate)
+                min_partition = get_partition_from_val(df_bp, time_vals.min(), aggregate)
+                max_partition = get_partition_from_val(df_bp, time_vals.max(), aggregate)
+                if (benchmark, pi) not in minmax:
+                    minmax[(benchmark, pi)] = [(arch_names[di], min_partition, max_partition)]
+                else:
+                    minmax[(benchmark, pi)].append((arch_names[di], min_partition, max_partition))
+
+    for di, df in enumerate(dfs):
+        if di != 1: continue
+        for benchmark in df["benchmark"].unique()[:2]:
+            fig.suptitle(f"Runtime Distribution of {benchmark}", fontsize=20)
+
+            for pi, problem_size in enumerate(df["problem_size"].unique()):
+                annotations = []
+                ax = fig.add_subplot(1, len(df["problem_size"].unique()), pi + 1)
+                ax.set_title(f"Array Size: {problem_size}", fontsize=18)
+                heights, edges = plot_histogram(
+                    ax, df, problem_size, benchmark, aggregate, annotations, annotate="default", verbose=False
+                )
+
+                df_bp = df[(df["benchmark"] == benchmark) & (df["problem_size"] == problem_size)]
+                print(arch_names[di], benchmark, problem_size)
+                time_vals = np.sort(get_agg_value(df_bp, "time", aggregate))
+                for item in minmax[(benchmark, pi)]:
+                    min_val = get_agg_value(df_bp[df_bp["container"] == item[1]], "time", aggregate).iloc[0]
+                    max_val = get_agg_value(df_bp[df_bp["container"] == item[2]], "time", aggregate).iloc[0]
+                    print(f"\t{item[0]}: min {min_val:.2f} - {get_rank(min_val, time_vals):.2f}%, max {max_val:.2f} - {get_rank(max_val, time_vals):.2f}%")
+                    imin = min(int(np.digitize(min_val, edges)) - 1, len(heights) - 1)
+                    imax = min(int(np.digitize(max_val, edges)) - 1, len(heights) - 1)
+                    annotate_point(ax, min_val, heights[imin], f"{item[0]} Min", "k", annotations)
+                    annotate_point(ax, max_val, heights[imax], f"{item[0]} Max", "k", annotations)
+                ax.set_ylim(top=15e4)
+                adjust_annotations(ax, annotations)
+
+            fig.tight_layout()
+            output_file = os.path.join(
+                output_dir,
+                f"{Path(files[di]).stem}_{benchmark}_{aggregate}_runtime_histogram_allminmax.{fmt}",
+            )
+            print(f"Saving {output_file}...")
+            savefig(fig, output_file)
+            fig.clf()  # Clear the figure to free memory for the next plot
+
+
 ############
-# BARPLOTS #
+# scatters#
 ############
 
 
@@ -378,9 +648,9 @@ def adjust_xticks(ax, xvals):
             xtick.set_y(-0.045)
 
 
-def barplot(ax, df, val, aggregate, aos, soa, sorted_indices=None):
+def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None):
     """
-    Plot a barplot of the given value for each partition in the DataFrame, sorted by the given value.
+    Plot a scatter of the given value for each partition in the DataFrame, sorted by the given value.
     AoS and SoA partitions are highlighted in red and orange respectively, and the standard deviation
     is plotted as error bars if there are less than 1000 partitions, or as a filled area otherwise.
 
@@ -413,59 +683,67 @@ def barplot(ax, df, val, aggregate, aos, soa, sorted_indices=None):
         ]
     )
 
-    error_bars_treshold = 10
-    # Plot barplot of all partitions
-    ax.bar(
+    err_bars = val != "time" or len(sorted_vals) >= 1000
+
+    # Plot scatter of all partitions
+    ax.errorbar(
         sorted_containers,
         sorted_vals,
-        yerr=sorted_stddev if len(sorted_vals) < error_bars_treshold else None,
+        yerr=sorted_stddev if err_bars else None,
         color=other_color,
         ecolor=stddev_color,
-        error_kw={"alpha": 0.3, "zorder": 100},
-        width=1,
+        ms=2,
+        fmt="o",
         label="Other Layouts",
+        rasterized=True,
     )
 
     # Overlap with bars for AoS partitions in red to highlight them
     aos_indices = [i for i, c in enumerate(sorted_containers) if c in aos]
-    ax.bar(
+    ax.scatter(
         sorted_containers[aos_indices],
         sorted_vals[aos_indices],
         color=aos_color,
-        width=1,
+        s=2,
         label="AoS (Reordered)",
+        zorder=20,
+        rasterized=True,
     )
 
     # Overlap with bars for SoA partitions in orange to highlight them
     soa_indices = [i for i, c in enumerate(sorted_containers) if c in soa]
-    ax.bar(
+    ax.scatter(
         sorted_containers[soa_indices],
         sorted_vals[soa_indices],
         color=soa_color,
-        linewidth=0.01,
-        width=1,
+        s=5,
         label="SoA",
+        zorder=20,
+        rasterized=True
     )
 
     # If there is a lot of data, we plot the standard deviation as a filled area instead of error bars
-    if len(sorted_vals) >= error_bars_treshold:
+    if not err_bars:
         ax.fill_between(
             sorted_containers,
             sorted_vals - sorted_stddev,
             sorted_vals + sorted_stddev,
-            color=stddev_color,
+            facecolor="none",
+            edgecolor=stddev_color,
+            linewidth=0.01,
             alpha=0.3,
         )
-    ax.add_patch(
-        plt.Rectangle(
-            (0, 0),
-            0,
-            0,
-            color=stddev_color,
-            alpha=0.3,
-            label="Standard Deviation",
+        ax.add_patch(
+            plt.Rectangle(
+                (0, 0),
+                0,
+                0,
+                alpha=0.3,
+                edgecolor=stddev_color,
+                facecolor="none",
+                label="Standard Deviation",
+            )
         )
-    )
 
     return sorted_indices, sorted_containers
 
@@ -496,9 +774,9 @@ def map_metric_name(metric, time_unit):
         return metric
 
 
-def plot_barplot(file, df, output_dir, aggregate, metrics):
+def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None):
     """
-    Plot barplots for each benchmark and problem size, for the given metrics.
+    Plot a scatter plot for each benchmark and problem size, for the given metrics.
     The bars are sorted by the first metric.
 
     :param df: Dictionary of DataFrames keyed by file name
@@ -507,10 +785,10 @@ def plot_barplot(file, df, output_dir, aggregate, metrics):
     :param metrics: List of metrics to plot (e.g., ["time", "PAPI_TOT_INS"])
     """
 
-    def plot_axes(ax, sorted_containers, metric):
+    def plot_axes(ax, df, sorted_containers, metric):
         """
         Helper method to set the x-ticks, y-scale, and y-label for the runtime
-        and hardware performance counter barplots.
+        and hardware performance counter scatters.
 
         :param xticks: List of x-tick labels to set
         :param sorted_containers: List of container names sorted by runtime to adjust the
@@ -520,8 +798,6 @@ def plot_barplot(file, df, output_dir, aggregate, metrics):
         step = 1500
         xticks = np.concatenate(
             [
-                aos_containers[:1],
-                soa_containers[:1],
                 sorted_containers[:1],
                 sorted_containers[-1:],
                 sorted_containers[
@@ -533,25 +809,34 @@ def plot_barplot(file, df, output_dir, aggregate, metrics):
         ax.set_xticklabels(
             xticks, rotation=45, fontsize=8, ha="right", rotation_mode="anchor"
         )
-        ax.get_xticklabels()[0].set_color(aos_color)  # AoS
-        ax.get_xticklabels()[1].set_color(soa_color)  # SoA
         adjust_xticks(ax, sorted_containers)
         ax.set_xlabel("Layouts", fontsize=14)
 
-        ax.set_yscale("log")
+        if ax.get_ylim()[0] >= 1e4 and metric != "time":
+            ax.set_yscale("log")
+        else:
+            ax.set_ylim(bottom=0, top=ax.get_ylim()[1] * 1.2)
         ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:g}"))
-        if ax.get_ylim()[1] / ax.get_ylim()[0] < 10:
+        if ax.get_ylim()[1] / (ax.get_ylim()[0] + .00001) < 10:
             ax.yaxis.set_minor_formatter(ticker.StrMethodFormatter("{x:g}"))
         ax.set_ylabel(
             map_metric_name(metric, time_unit=df["time_unit"].iloc[0]), fontsize=14
         )
-        ax.legend(loc="best", bbox_to_anchor=(0, 0.5, 1, 0.5))
+
+        annotations = []
+        annotate_point(ax, aos_containers[0], get_val_from_partition(df, aos_containers[0], metric, aggregate),
+                       "AoS", aos_color, annotations)
+        annotate_point(ax, soa_containers[0], get_val_from_partition(df, soa_containers[0], metric, aggregate),
+                       "SoA", soa_color, annotations)
+        adjust_annotations(ax, annotations)
+
+        ax.legend(loc="best")
 
     fig = plt.figure(figsize=(9, 5 * len(metrics)))
     problem_size = df["problem_size"].max()
 
     for ib, benchmark in enumerate(df["benchmark"].unique()):
-        fig.suptitle(f"{benchmark}", fontsize=20)
+        fig.suptitle(f"{benchmark}", fontsize=20, y=0.98)
 
         df_bp = df[
             (df["benchmark"] == benchmark) & (df["problem_size"] == problem_size)
@@ -559,15 +844,27 @@ def plot_barplot(file, df, output_dir, aggregate, metrics):
 
         # Plot the first metric
         ax = fig.add_subplot(len(metrics), 1, 1)
-        sorted_indices, sorted_containers = barplot(
-            ax, df_bp, metrics[0], aggregate, aos_containers, soa_containers
-        )
-        plot_axes(ax, sorted_containers, metrics[0])
+        if not sort_by:
+            sorted_indices, sorted_containers = scatter(
+                ax, df_bp, metrics[0], aggregate, aos_containers, soa_containers
+            )
+        else:
+            sorted_indices = np.argsort(get_agg_value(df_bp, sort_by, aggregate))
+            _, sorted_containers = scatter(
+                ax,
+                df_bp,
+                metrics[0],
+                aggregate,
+                aos_containers,
+                soa_containers,
+                sorted_indices,
+            )
+        plot_axes(ax, df_bp, sorted_containers, metrics[0])
 
-        # Plot barplots for all other metrics, with the same order of containers as the first metric
+        # Plot scatters for all other metrics, with the same order of containers as the first metric
         for mi, metric in enumerate(metrics[1:], start=1):
             ax = fig.add_subplot(len(metrics), 1, mi + 1)
-            barplot(
+            scatter(
                 ax,
                 df_bp,
                 metric,
@@ -576,31 +873,27 @@ def plot_barplot(file, df, output_dir, aggregate, metrics):
                 soa_containers,
                 sorted_indices,
             )
-            plot_axes(ax, sorted_containers, metric)
+            plot_axes(ax, df_bp, sorted_containers, metric)
 
         fig.tight_layout()
-        print(
-            f"Saving {file}_{benchmark}_{aggregate}_barplot_{'_'.join([m.split(':')[0] for m in metrics])}.pdf..."
+        output_file = os.path.join(
+            output_dir,
+            f"{Path(file).stem}_{benchmark}_{aggregate}_scatter_{'_'.join([m.split(':')[0] for m in metrics])}.{fmt}",
         )
-        fig.savefig(
-            os.path.join(
-                output_dir,
-                f"{file}_{benchmark}_{aggregate}_barplot_{'_'.join([m.split(':')[0] for m in metrics])}.pdf",
-            )
-        )
+        print(f"Saving {output_file}...")
+        savefig(fig, output_file)
         fig.clf()  # Clear the figure to free memory for the next plot
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-o", "--output", type=str, help="Set output directory", default="."
-    )
+    parser.add_argument("-o", "--output", type=str, help="Set output directory")
     parser.add_argument(
         "-i",
         "--input",
         type=str,
         help="<Required> Set input file",
+        nargs="+",
         required=True,
     )
     parser.add_argument(
@@ -612,21 +905,47 @@ if __name__ == "__main__":
         default="avg",
     )
     args = parser.parse_args()
-
-    df = pd.read_csv(args.input)
-    n_members = np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
-    aos_containers = [
-        "".join([str(p) for p in perm]) for perm in permutations(range(n_members))
-    ]
-    soa_containers = [
-        "_".join([str(p) for p in perm]) for perm in permutations(range(n_members))
-    ]
+    if not args.output:
+        args.output = os.path.dirname(args.input)
 
     aos_color = "#C00000"
     soa_color = "#EE8F00"
-    other_color = "#164588"
-    stddev_color = "#AB8AD1"
+    other_color = "#D5E4F0"
+    stddev_color = "#A3A3A3DC"
+    ut_color = "#85A0D6"
+    unm_color = "#9A2CC9"
+    ua_color = "#FFE11F"
+    dpi = 1200
+    fmt = "pdf"
 
-    plot_runtime_histogram(args.input, df, args.output, args.aggregate)
-    plot_barplot(args.input, df, args.output, args.aggregate, ["time", "ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR", "PAPI_L1_DCA"])
-    plot_barplot(args.input, df, args.output, args.aggregate, ["PAPI_TOT_INS", "time"])
+    ########
+    for i, input in enumerate(args.input):
+        df = pd.read_csv(input)
+
+        container_base_name = (
+            "PartitionedContainerContiguous"
+            if "PartitionedContainerContiguous" in df["container"].iloc[0]
+            else "PartitionedContainer"
+        )
+
+        n_members = np.max([int(c) for c in df["container"].iloc[0] if c.isdigit()]) + 1
+        aos_containers = [
+            "".join([str(p) for p in perm]) for perm in permutations(range(n_members))
+        ]
+        soa_containers = [
+            "_".join([str(p) for p in perm]) for perm in permutations(range(n_members))
+        ]
+
+        plot_scatter(input, df, args.output, args.aggregate, ["time"])
+        plot_scatter(input, df, args.output, args.aggregate, ["PAPI_TOT_INS", "time"])
+        plot_scatter(input, df, args.output, args.aggregate, ["PAPI_L1_DCM"], sort_by="time")
+
+    ########
+    plot_runtime_histogram_all_minmax(args.input, [pd.read_csv(f) for f in args.input], args.output, args.aggregate)
+    plot_runtime_histogram_max_psize_all_archs(
+        args.input,
+        [pd.read_csv(f) for f in args.input],
+        args.output,
+        args.aggregate,
+        annotate="guidelines",
+    )
