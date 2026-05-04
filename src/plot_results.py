@@ -648,7 +648,7 @@ def adjust_xticks(ax, xvals):
             xtick.set_y(-0.045)
 
 
-def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None):
+def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None, stddev="stddev"):
     """
     Plot a scatter of the given value for each partition in the DataFrame, sorted by the given value.
     AoS and SoA partitions are highlighted in red and orange respectively, and the standard deviation
@@ -661,12 +661,19 @@ def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None):
     :param aos: List of AoS partition strings to highlight
     :param soa: List of SoA partition strings to highlight
     :param sorted_indices: Optional precomputed sorted indices to use for sorting the bars
+    :param stddev: Standard deviation column name
     :return: Sorted indices and sorted container names
     """
     if sorted_indices is None:
         sorted_indices = np.argsort(get_agg_value(df, val, aggregate))
     sorted_vals = np.array(get_agg_value(df, val, aggregate).iloc[sorted_indices])
-    sorted_stddev = np.array(get_agg_value(df, val, "stddev").iloc[sorted_indices])
+
+    if stddev == "stddev":
+        sorted_stddev = np.array(get_agg_value(df, val, "stddev").iloc[sorted_indices])
+    else: # minmax
+        sorted_stddev = [sorted_vals - get_agg_value(df, val, "min").iloc[sorted_indices],
+                         get_agg_value(df, val, "max").iloc[sorted_indices] - sorted_vals]
+
     sorted_containers = (
         df.groupby("container")["time"].mean().index[sorted_indices]
         if "time" in df.columns
@@ -683,13 +690,11 @@ def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None):
         ]
     )
 
-    err_bars = val != "time" or len(sorted_vals) >= 1000
-
     # Plot scatter of all partitions
     ax.errorbar(
         sorted_containers,
         sorted_vals,
-        yerr=sorted_stddev if err_bars else None,
+        yerr=sorted_stddev,
         color=other_color,
         ecolor=stddev_color,
         ms=2,
@@ -722,29 +727,6 @@ def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None):
         rasterized=True
     )
 
-    # If there is a lot of data, we plot the standard deviation as a filled area instead of error bars
-    if not err_bars:
-        ax.fill_between(
-            sorted_containers,
-            sorted_vals - sorted_stddev,
-            sorted_vals + sorted_stddev,
-            facecolor="none",
-            edgecolor=stddev_color,
-            linewidth=0.01,
-            alpha=0.3,
-        )
-        ax.add_patch(
-            plt.Rectangle(
-                (0, 0),
-                0,
-                0,
-                alpha=0.3,
-                edgecolor=stddev_color,
-                facecolor="none",
-                label="Standard Deviation",
-            )
-        )
-
     return sorted_indices, sorted_containers
 
 
@@ -774,7 +756,7 @@ def map_metric_name(metric, time_unit):
         return metric
 
 
-def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None):
+def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None, stddev="stddev"):
     """
     Plot a scatter plot for each benchmark and problem size, for the given metrics.
     The bars are sorted by the first metric.
@@ -783,6 +765,7 @@ def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None):
     :param output_dir: Directory to save the output plots
     :param aggregate: Aggregation method for the runtime (e.g., "avg" or "median")
     :param metrics: List of metrics to plot (e.g., ["time", "PAPI_TOT_INS"])
+    :param stddev: Standard deviation mode, stddev or minmax
     """
 
     def plot_axes(ax, df, sorted_containers, metric):
@@ -846,7 +829,7 @@ def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None):
         ax = fig.add_subplot(len(metrics), 1, 1)
         if not sort_by:
             sorted_indices, sorted_containers = scatter(
-                ax, df_bp, metrics[0], aggregate, aos_containers, soa_containers
+                ax, df_bp, metrics[0], aggregate, aos_containers, soa_containers, stddev=stddev
             )
         else:
             sorted_indices = np.argsort(get_agg_value(df_bp, sort_by, aggregate))
@@ -858,6 +841,7 @@ def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None):
                 aos_containers,
                 soa_containers,
                 sorted_indices,
+                stddev=stddev,
             )
         plot_axes(ax, df_bp, sorted_containers, metrics[0])
 
@@ -872,13 +856,14 @@ def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None):
                 aos_containers,
                 soa_containers,
                 sorted_indices,
+                stddev=stddev,
             )
             plot_axes(ax, df_bp, sorted_containers, metric)
 
         fig.tight_layout()
         output_file = os.path.join(
             output_dir,
-            f"{Path(file).stem}_{benchmark}_{aggregate}_scatter_{'_'.join([m.split(':')[0] for m in metrics])}.{fmt}",
+            f"{Path(file).stem}_{benchmark}_{aggregate}_{stddev}err_scatter_{'_'.join([m.split(':')[0] for m in metrics])}.{fmt}",
         )
         print(f"Saving {output_file}...")
         savefig(fig, output_file)
@@ -905,8 +890,6 @@ if __name__ == "__main__":
         default="avg",
     )
     args = parser.parse_args()
-    if not args.output:
-        args.output = os.path.dirname(args.input)
 
     aos_color = "#C00000"
     soa_color = "#EE8F00"
@@ -920,6 +903,9 @@ if __name__ == "__main__":
 
     ########
     for i, input in enumerate(args.input):
+        if not args.output:
+            args.output = os.path.dirname(args.input[i])
+
         df = pd.read_csv(input)
 
         container_base_name = (
@@ -936,16 +922,16 @@ if __name__ == "__main__":
             "_".join([str(p) for p in perm]) for perm in permutations(range(n_members))
         ]
 
-        plot_scatter(input, df, args.output, args.aggregate, ["time"])
-        plot_scatter(input, df, args.output, args.aggregate, ["PAPI_TOT_INS", "time"])
-        plot_scatter(input, df, args.output, args.aggregate, ["PAPI_L1_DCM"], sort_by="time")
+        plot_scatter(input, df, args.output, args.aggregate, ["time"], stddev="minmax")
+        # plot_scatter(input, df, args.output, args.aggregate, ["PAPI_TOT_INS", "time"], stddev="stddev")
+        # plot_scatter(input, df, args.output, args.aggregate, ["PAPI_L1_DCM"], sort_by="time", stddev="stddev")
 
     ########
-    plot_runtime_histogram_all_minmax(args.input, [pd.read_csv(f) for f in args.input], args.output, args.aggregate)
-    plot_runtime_histogram_max_psize_all_archs(
-        args.input,
-        [pd.read_csv(f) for f in args.input],
-        args.output,
-        args.aggregate,
-        annotate="guidelines",
-    )
+    # plot_runtime_histogram_all_minmax(args.input, [pd.read_csv(f) for f in args.input], args.output, args.aggregate)
+    # plot_runtime_histogram_max_psize_all_archs(
+    #     args.input,
+    #     [pd.read_csv(f) for f in args.input],
+    #     args.output,
+    #     args.aggregate,
+    #     annotate="guidelines",
+    # )

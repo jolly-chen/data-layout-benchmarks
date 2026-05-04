@@ -4,6 +4,9 @@ project(data_layout_benchmarks)
 
 set(CMAKE_CXX_STANDARD 23)
 
+# add_compile_options(-g -O3 -Wall -Wextra -Rpass=loop-vectorize -Rpass-missed=loop-vectorize -Rpass-analysis=loop-vectorize -fveclib=libmvec)
+# add_compile_options(-g -O3 -Wall -Wextra -fopt-info-vec -fopt-info-vec-missed)
+
 add_compile_options(-O3 -Wall -Wextra)
 
 # Find LIKWID
@@ -35,5 +38,4 @@ if (vec)
     add_compile_options(-march=native -ftree-vectorize -ffast-math)
 endif()
 
-add_executable(test test.cpp)
 add_executable(main main.cpp)

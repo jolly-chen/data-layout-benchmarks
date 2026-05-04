@@ -1,0 +1,38 @@
+{
+    "version": 1.0,
+    "configurePresets": [
+        {
+            "name": "gcc",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_PREFIX_PATH": "/data/apps/papi/latest/install",
+                "vec": "ON"
+            }
+        },
+        {
+            "name": "clang",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "/data/apps/clang-20/build/bin/clang++",
+                "CMAKE_C_COMPILER": "/data/apps/clang-20/build/bin/clang",
+                "CMAKE_PREFIX_PATH": "/data/apps/papi/latest/install",
+                "vec": "ON"
+            }
+        },
+        {
+            "name": "refl",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "/data/apps/clang-p2996/build/bin/clang++",
+                "CMAKE_C_COMPILER": "/data/apps/clang-p2996/build/bin/clang",
+                "CMAKE_PREFIX_PATH": "/data/apps/papi/latest/install",
+                "vec": "ON"
+            }
+        }
+    ]
+}
