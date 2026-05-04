@@ -370,7 +370,7 @@ def write_benchmarks(p_list, struct_name_base, members, contiguous):
 
 
 def write_partitioned_structs(
-    struct_name_base, members, start, end, contiguous, only=None
+    struct_name_base, members, start, end, contiguous, only=None, only_every=None
 ):
     """
     Generate partitioned data structures and write them to datastructures.h.
@@ -382,12 +382,13 @@ def write_partitioned_structs(
     :param end: End index for batching
     :param contiguous: Whether to generate contiguous partitioned structures
     :param only: List of codewords to only generate specific partitions
+    :param only_every: Only generate every n-th partition (always includes AoS and SoA)
     """
     with open("datastructures.h", "w") as f:
         p_list = []
         s_list = []
 
-        for partition in generate_partitions(members, contiguous, only):
+        for ip, partition in enumerate(generate_partitions(members, contiguous, only)):
             if end and len(p_list) >= end:
                 break
 
@@ -395,6 +396,10 @@ def write_partitioned_structs(
             partition_string = "_".join(
                 ["".join(str(m) for m in subset) for subset in partition]
             )
+
+            if only_every and ip % only_every != 0 and \
+                partition_string != aos_string and partition_string != soa_string:
+                continue
 
             # Skip duplicates
             if partition_string in p_list:
@@ -446,45 +451,6 @@ def write_partitioned_structs(
     write_benchmarks(p_list[start:], struct_name_base, members, contiguous)
 
 
-def write_test_partitions():
-    """
-    Generate test partitioned data structures used in the unit tests in test.cpp and write them to test.h.
-    """
-    struct_name_base = "S"
-    members = [("int", "x"), ("double", "y"), ("float", "z"), ("char", "w")]
-
-    with open("test.h", "w") as f:
-        p_list = [[[0, 1], [2, 3]], [[0], [1], [2], [3]], [[0], [1], [2, 3]]]
-        s_list = []
-
-        for partition in p_list:
-            partition_string = "_".join(
-                ["".join(str(m) for m in subset) for subset in partition]
-            )
-            write_contiguous_partition(
-                f, struct_name_base, partition_string, partition, members
-            )
-            write_partition(f, struct_name_base, partition_string, partition, members)
-
-            for subset in partition:
-                if subset not in s_list:
-                    s_list.append(subset)
-
-    with open("test.h", "r") as f:
-        prev_lines = f.readlines()
-
-    with open("test.h", "w") as f:
-        f.write(f"#ifndef TEST_H\n")
-        f.write(f"#define TEST_H\n")
-        f.write("// THIS FILE IS GENERATED USING generate_datastructures.py\n")
-        f.write('#include "utils.h"\n\n')
-
-        write_subsets(f, struct_name_base, members, s_list)
-
-        f.writelines(prev_lines)
-        f.write(f"\n#endif // TEST_H\n")
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -517,10 +483,15 @@ if __name__ == "__main__":
         nargs="*",
         help="Only generate partitions with these codewords (e.g., '01_23')",
     )
+    parser.add_argument(
+        "--only_every",
+        type=int,
+        help="Only generate every n-th partition (always includes AoS and SoA)",
+    )
     args = parser.parse_args()
 
     print(
-        f"Configuration:\n  batch_size={args.batch_size}\n  batch_num={args.batch_num}\n  contiguous={args.contiguous}\n  only={args.only}"
+        f"Configuration:\n  batch_size={args.batch_size}\n  batch_num={args.batch_num}\n  contiguous={args.contiguous}\n  only={args.only}\n  only_every={args.only_every}"
     )
 
     if args.batch_size == -1:
@@ -535,6 +506,8 @@ if __name__ == "__main__":
         struct_name_base = lines[0].strip()
         data_members = [line.strip().split() for line in lines[1:]]
         print(data_members)
+        aos_string = "".join([str(i) for i in range(len(data_members))])
+        soa_string = "_".join([str(i) for i in range(len(data_members))])
 
     write_partitioned_structs(
         struct_name_base,
@@ -543,5 +516,5 @@ if __name__ == "__main__":
         end,
         args.contiguous,
         args.only,
+        args.only_every
     )
-    write_test_partitions()
