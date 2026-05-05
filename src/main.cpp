@@ -340,9 +340,9 @@ void RunAllBenchmarks(size_t n, size_t alignment) {
   RunBenchmark2<Container>(kernels::InvariantMassRandom<Container>,
                            "InvariantMassRandom", n, alignment, n, indices);
 
-  RunBenchmark1<Container>(kernels::DeltaR2Pairwise<Container>,
-                           "DeltaR2Pairwise", n, alignment,
-                           round(n * (n - 1) / 2));
+  // RunBenchmark1<Container>(kernels::DeltaR2Pairwise<Container>,
+  //                          "DeltaR2Pairwise", n, alignment,
+  //                          round(n * (n - 1) / 2));
 }
 
 /* Parse command-line options.
