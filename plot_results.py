@@ -431,11 +431,11 @@ def plot_histogram(
         median_partition_unm = np.digitize(median_unm, np.sort(time_vals)) - 1
         max95_partition_unm = np.digitize(max_95_percentile_unm, np.sort(time_vals)) - 1
 
-        print(
-            f"{benchmark} - Used not mixed with Unused:\n"
-            f"\tmax95 ({max_95_percentile_unm}, {max95_partition_unm}) {max95_partition_unm / len(time_vals) * 100:.2f}%\n"
-            f"\tmedian ({median_unm}, {median_partition_unm}) {median_partition_unm / len(time_vals) * 100:.2f}%"
-        )
+        # print(
+        #     f"{benchmark} - Used not mixed with Unused:\n"
+        #     f"\tmax95 ({max_95_percentile_unm}, {max95_partition_unm}) {max95_partition_unm / len(time_vals) * 100:.2f}%\n"
+        #     f"\tmedian ({median_unm}, {median_partition_unm}) {median_partition_unm / len(time_vals) * 100:.2f}%"
+        # )
 
         ua_vals = get_agg_value(
             df_bp[
@@ -479,7 +479,7 @@ def plot_histogram(
 
 
 def plot_runtime_histogram_max_psize(
-    file, df, output_dir, aggregate, annotate
+    file, df, output_dir, aggregate, annotate, output_file
 ):
     """
     Plot runtime histograms for each benchmark with the maximum problem size
@@ -497,16 +497,17 @@ def plot_runtime_histogram_max_psize(
         plot_histogram(ax, df, problem_size, benchmark, aggregate, [], annotate)
 
     fig.tight_layout()
-    output_file = os.path.join(
-        output_dir,
-        f"{Path(file).stem}_maxpsize_{aggregate}_runtime_histogram_{annotate}.{fmt}",
-    )
+    if not output_file:
+        output_file = os.path.join(
+            output_dir,
+            f"{Path(file).stem}_maxpsize_{aggregate}_runtime_histogram_{annotate}.{fmt}",
+        )
     print(f"Saving {output_file}...")
     savefig(fig, output_file)
 
 
 def plot_runtime_histogram_per_benchmark(
-    file, df, output_dir, aggregate, annotate="default"
+    file, df, output_dir, aggregate, annotate, output_file
 ):
     """
     Plot runtime histograms for each benchmark as a separate row,
@@ -535,10 +536,11 @@ def plot_runtime_histogram_per_benchmark(
 
     fig.tight_layout(rect=[0, 0, 1, 0.98])
     fig.subplots_adjust(hspace=0.5)
-    output_file = os.path.join(
-        output_dir,
-        f"{Path(file).stem}_{aggregate}_runtime_histogram_{annotate}.{fmt}",
-    )
+    if not output_file:
+        output_file = os.path.join(
+            output_dir,
+            f"{Path(file).stem}_{aggregate}_runtime_histogram_{annotate}.{fmt}",
+        )
     print(f"Saving {output_file}...")
     savefig(fig, output_file)
 
@@ -678,7 +680,7 @@ def map_metric_name(metric, time_unit):
         return metric
 
 
-def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None, err="stddev"):
+def plot_scatter(file, df, output_dir, aggregate, metrics, err, sort_by=None, output_file=None):
     """
     Plot a scatter plot for each benchmark and problem size, for the given metrics.
     The bars are sorted by the first metric.
@@ -796,10 +798,11 @@ def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None, err="st
             plot_axes(ax, df_bp, sorted_containers, metric)
 
     fig.tight_layout()
-    output_file = os.path.join(
-        output_dir,
-        f"{Path(file).stem}_{aggregate}_{err}_scatter_{'_'.join([m.split(':')[0] for m in metrics])}.{fmt}",
-    )
+    if not output_file:
+        output_file = os.path.join(
+            output_dir,
+            f"{Path(file).stem}_{aggregate}_{err}_scatter_{'_'.join([m.split(':')[0] for m in metrics])}.{fmt}",
+        )
     print(f"Saving {output_file}...")
     savefig(fig, output_file)
     fig.clf()  # Clear the figure to free memory for the next plot
@@ -842,9 +845,6 @@ if __name__ == "__main__":
             args.output = os.path.dirname(args.input[i])
 
         df = pd.read_csv(input)
-        # keep every 10th row to reduce data size
-        df = df.iloc[::10].reset_index(drop=True)
-
 
         container_base_name = (
             "PartitionedContainerContiguous"
@@ -861,12 +861,12 @@ if __name__ == "__main__":
         ]
 
         plot_runtime_histogram_per_benchmark(
-            input, df, args.output, args.aggregate, annotate="default"
+            input, df, args.output, args.aggregate, annotate="default", output_file="results/figure3.pdf"
         )
         plot_runtime_histogram_max_psize(
-            input, df, args.output, args.aggregate, annotate="guidelines"
+            input, df, args.output, args.aggregate, annotate="guidelines", output_file="results/figure4.pdf"
         )
-        plot_scatter(input, df, args.output, args.aggregate, ["time"], err="stddev")
+        plot_scatter(input, df, args.output, args.aggregate, ["time"], err="stddev", output_file="results/figure5.pdf")
         plot_scatter(
             input,
             df,
@@ -874,6 +874,7 @@ if __name__ == "__main__":
             args.aggregate,
             ["PAPI_TOT_INS", "time"],
             err="stddev",
+            output_file="results/figure6.pdf"
         )
         plot_scatter(
             input,
@@ -883,16 +884,7 @@ if __name__ == "__main__":
             [
                 "ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR"
             ],
-            sort_by="time",
             err="stddev",
+            sort_by="time",
+            output_file="results/figure7.pdf"
         )
-
-    ########
-    # plot_runtime_histogram_all_minmax(args.input, [pd.read_csv(f) for f in args.input], args.output, args.aggregate)
-    # plot_runtime_histogram_max_psize_all_archs(
-    #     args.input,
-    #     [pd.read_csv(f) for f in args.input],
-    #     args.output,
-    #     args.aggregate,
-    #     annotate="guidelines",
-    # )
