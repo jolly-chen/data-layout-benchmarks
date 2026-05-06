@@ -6,7 +6,7 @@ ENV TERM=xterm
 ENV CC=clang
 ENV CXX=clang++
 
-RUN dnf install -y 'dnf-command(config-manager)' \
+RUN dnf install -y 'dnf-command(config-manager)' epel-release \
     && dnf config-manager --set-enabled crb
 
 RUN dnf install -y cmake clang perl wget unzip
