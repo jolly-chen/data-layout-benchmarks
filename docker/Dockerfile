@@ -9,7 +9,7 @@ ENV CXX=clang++
 RUN dnf install -y 'dnf-command(config-manager)' \
     && dnf config-manager --set-enabled crb
 
-RUN dnf install -y cmake clang-20 perl wget unzip python3-numpy python3-pandas
+RUN dnf install -y cmake clang perl wget unzip
 
 # install python libraries
 RUN dnf install -y python3-pip \
