@@ -9,7 +9,7 @@ ENV CXX=clang++
 RUN dnf install -y 'dnf-command(config-manager)' epel-release \
     && dnf config-manager --set-enabled crb
 
-RUN dnf install -y cmake clang perl wget unzip
+RUN dnf install -y git cmake clang perl wget unzip
 
 # install python libraries
 RUN dnf install -y python3-pip \
@@ -34,7 +34,7 @@ RUN wget https://github.com/RRZE-HPC/likwid/archive/refs/tags/v${LIKWID_VERSION}
     && make -j $(nproc)\
     && make install \
     && cd /root
-ENV PATH="/usr/local/likwid/bin"
+ENV PATH=$PATH:"/usr/local/likwid/bin"
 
 # Install the benchmarks repo
 ENV DLB_VERSION=europar26_artifact
