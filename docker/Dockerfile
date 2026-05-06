@@ -49,14 +49,14 @@ RUN wget https://github.com/icl-utk-edu/papi/releases/download/papi-7-2-0-t/papi
 
 # Install the benchmarks repo
 ENV DLB_VERSION=europar26_artifact
-RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git all_layouts \
-    && cd all_layouts \
-    && git checkout ${DLB_VERSION} \
-    && cd src \
-    && python3 generate_datastructures.py --data_spec particle.spec \
-    && cmake . -Dvec=ON \
-    && make \
-    && cd /root
+# RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git all_layouts \
+#     && cd all_layouts \
+#     && git checkout ${DLB_VERSION} \
+#     && cd src \
+#     && python3 generate_datastructures.py --data_spec particle.spec \
+#     && cmake . -Dvec=ON \
+#     && make \
+#     && cd /root
 
 RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git some_layouts \
     && cd some_layouts \
