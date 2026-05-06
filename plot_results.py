@@ -19,8 +19,10 @@ from pathlib import Path
 # HELPERS #
 ###########
 
+
 def savefig(fig, output_file):
     fig.savefig(output_file, dpi=1200)
+
 
 def get_agg_value(df, val, aggregate):
     """
@@ -64,8 +66,12 @@ def get_partition_from_val(df, val, aggregate):
 
     return partition
 
+
 def get_val_from_partition(df, partition, val, aggregate):
-    return get_agg_value(df[df["container"].str.contains(partition)], val, aggregate).iloc[0]
+    return get_agg_value(
+        df[df["container"].str.contains(partition)], val, aggregate
+    ).iloc[0]
+
 
 def is_overlapping_1D(xmin1, xmax1, xmin2, xmax2):
     """
@@ -100,7 +106,7 @@ def adjust_annotations(ax, annotations):
         :param new_y: New y-coordinate for the annotation
         :param zorder: New z-order for the annotation
         """
-        annotations[idx].set(position=(new_x, new_y), zorder=zorder)
+        annotations[idx].set(position=(new_x, new_y), zorder=100 + zorder)
 
         # Update the coords array with the new boundaries
         (new_xmin, new_ymin), (new_xmax, new_ymax) = ax.transData.inverted().transform(
@@ -155,7 +161,7 @@ def adjust_annotations(ax, annotations):
                 # Move the current box upward:
                 update_annotation_positions(
                     i,
-                    annotations[i].xyann[0] + .05 * (j_textbox_xmax - j_textbox_xmin),
+                    annotations[i].xyann[0] + 0.05 * (j_textbox_xmax - j_textbox_xmin),
                     j_textbox_ymax + 2.6 * (i_textbox_ymax - i_textbox_ymin),
                     annotations[i].zorder,
                 )
@@ -166,7 +172,7 @@ def adjust_annotations(ax, annotations):
         if coord[1] > ax.get_ylim()[1]:
             update_annotation_positions(
                 i,
-                annotations[i].xyann[0] + .4 * (j_textbox_xmax - j_textbox_xmin),
+                annotations[i].xyann[0] + 0.4 * (j_textbox_xmax - j_textbox_xmin),
                 ax.get_ylim()[1] * 0.75,
                 len(annotations) + ii,
             )
@@ -177,7 +183,6 @@ def adjust_annotations(ax, annotations):
                 annotations[i].xyann[1],
                 len(annotations) + ii,
             )
-        annotations[i].draggable()
 
 
 def used_alone(partition, used):
@@ -214,6 +219,7 @@ def used_together(partition, used):
 #############
 # HISTOGRAM #
 #############
+
 
 def annotate_point(ax, x, y, text, color, annotations):
     """
@@ -355,7 +361,9 @@ def annotate_common(ax, df, edges, annotations, aggregate, verbose=True):
         )
 
 
-def plot_histogram(ax, df, problem_size, benchmark, aggregate, annotations, annotate, verbose=True):
+def plot_histogram(
+    ax, df, problem_size, benchmark, aggregate, annotations, annotate, verbose=True
+):
     df_bp = df[(df["benchmark"] == benchmark) & (df["problem_size"] == problem_size)]
     time_vals = get_agg_value(df_bp, "time", aggregate)
     heights, edges, _ = ax.hist(
@@ -368,6 +376,7 @@ def plot_histogram(ax, df, problem_size, benchmark, aggregate, annotations, anno
 
     if annotate == "default":
         annotate_common(ax, df_bp, edges, annotations, aggregate, verbose)
+        annotate_minmax(ax, df_bp, heights, annotations, aggregate, verbose)
     elif annotate == "guidelines":
         ut_containers = df_bp[
             df_bp["container"].isin(
@@ -455,7 +464,6 @@ def plot_histogram(ax, df, problem_size, benchmark, aggregate, annotations, anno
         max95_partition_ua = np.digitize(max_95_percentile_ua, np.sort(time_vals)) - 1
         median_partition_ua = np.digitize(median_ua, np.sort(time_vals)) - 1
 
-
     ax.set_ylabel("Frequency", fontsize=14)
     ax.set_yscale("symlog")
     y_minor = matplotlib.ticker.LogLocator(
@@ -470,52 +478,12 @@ def plot_histogram(ax, df, problem_size, benchmark, aggregate, annotations, anno
     return heights, edges
 
 
-def plot_runtime_histogram_max_psize_all_archs(
-    files, dfs, output_dir, aggregate, annotate
-):
-    """
-    Plot runtime histograms for each benchmark and problem size.
-
-    :param df: Dictionary of DataFrames keyed by file name
-    :param output_dir: Directory to save the output plots
-    """
-    plt.rcParams["text.usetex"] = True
-    fig = plt.figure(figsize=(12, 3 * len(files)))
-    for row, (file, df) in enumerate(zip(files, dfs)):
-        problem_size = df["problem_size"].max()
-
-        for ib, benchmark in enumerate(df["benchmark"].unique()):
-            ax = fig.add_subplot(
-                len(files),
-                len(df["benchmark"].unique()),
-                row * len(df["benchmark"].unique()) + ib + 1,
-            )
-            ax.set_title(benchmark, fontsize=18)
-            plot_histogram(ax, df, problem_size, benchmark, aggregate, [], annotate)
-            if ib == 0:
-                arch_name = (
-                    Path(file).stem.split("_")[0].upper()
-                    + " "
-                    + Path(file).stem.split("_")[1].title()
-                )
-                ax.set_ylabel(
-                    r"\textbf{\Large{" + arch_name + r"}}" + "\nFrequency", fontsize=18
-                )
-
-    fig.tight_layout()
-    output_file = os.path.join(
-        output_dir,
-        f"allarchs_maxpsize_{aggregate}_runtime_histogram_{annotate}.{fmt}",
-    )
-    print(f"Saving {output_file}...")
-    savefig(fig, output_file)
-
-
 def plot_runtime_histogram_max_psize(
-    file, df, output_dir, aggregate, annotate="default"
+    file, df, output_dir, aggregate, annotate
 ):
     """
-    Plot runtime histograms for each benchmark and problem size.
+    Plot runtime histograms for each benchmark with the maximum problem size
+    for a single architecture in a single figure.
 
     :param df: Dictionary of DataFrames keyed by file name
     :param output_dir: Directory to save the output plots
@@ -524,9 +492,9 @@ def plot_runtime_histogram_max_psize(
     problem_size = df["problem_size"].max()
 
     for ib, benchmark in enumerate(df["benchmark"].unique()):
-        ax = fig.add_subplot(1, len(df["problem_size"].unique()), ib + 1)
+        ax = fig.add_subplot(1, len(df["benchmark"].unique()), ib + 1)
         ax.set_title(benchmark, fontsize=18)
-        plot_histogram(ax, df, problem_size, benchmark, aggregate, annotate)
+        plot_histogram(ax, df, problem_size, benchmark, aggregate, [], annotate)
 
     fig.tight_layout()
     output_file = os.path.join(
@@ -541,88 +509,40 @@ def plot_runtime_histogram_per_benchmark(
     file, df, output_dir, aggregate, annotate="default"
 ):
     """
-    Plot runtime histograms for each benchmark and problem size.
+    Plot runtime histograms for each benchmark as a separate row,
+    with all problem sizes as columns, for a single file
 
     :param df: Dictionary of DataFrames keyed by file name
     :param output_dir: Directory to save the output plots
     """
-    fig = plt.figure(figsize=(7 * len(df["problem_size"].unique()), 4))
+    fig = plt.figure(figsize=(7 * len(df["problem_size"].unique()), 4 * len(df["benchmark"].unique())))
+    n_benchmarks = len(df["benchmark"].unique())
+    n_problem_sizes = len(df["problem_size"].unique())
 
-    for benchmark in df["benchmark"].unique():
-        fig.suptitle(f"Runtime Distribution of {benchmark}", fontsize=20)
+    for ib, benchmark in enumerate(df["benchmark"].unique()):
+        row_title_y = 1 - (ib / n_benchmarks) - 0.02
+        fig.text(0.5, row_title_y, benchmark, ha="center", va="bottom", fontsize=20)
 
         for pi, problem_size in enumerate(df["problem_size"].unique()):
-            ax = fig.add_subplot(1, len(df["problem_size"].unique()), pi + 1)
+            annotations = []
+            ax = fig.add_subplot(n_benchmarks,
+                                 n_problem_sizes,
+                                 ib * n_problem_sizes + pi + 1)
             ax.set_title(f"Array Size: {problem_size}", fontsize=18)
-            plot_histogram(ax, df, problem_size, benchmark, aggregate, annotate)
+            plot_histogram(ax, df, problem_size, benchmark, aggregate, annotations, annotate)
             ax.set_ylim(top=15e4)
+            adjust_annotations(ax, annotations)
 
-        fig.tight_layout()
-        output_file = os.path.join(
-            output_dir,
-            f"{Path(file).stem}_{benchmark}_{aggregate}_runtime_histogram_{annotate}.{fmt}",
-        )
-        print(f"Saving {output_file}...")
-        savefig(fig, output_file)
+    fig.tight_layout(rect=[0, 0, 1, 0.98])
+    fig.subplots_adjust(hspace=0.5)
+    output_file = os.path.join(
+        output_dir,
+        f"{Path(file).stem}_{aggregate}_runtime_histogram_{annotate}.{fmt}",
+    )
+    print(f"Saving {output_file}...")
+    savefig(fig, output_file)
 
-        fig.clf()  # Clear the figure to free memory for the next plot
-
-
-def plot_runtime_histogram_all_minmax(files, dfs, output_dir, aggregate):
-    def get_rank(val, sorted_vals):
-        return int(np.digitize(val, sorted_vals)) / len(sorted_vals) * 100
-
-    fig = plt.figure(figsize=(14, 4))
-    arch_names = ['Zen2', 'Zen4', 'HSW', 'SKL']
-    minmax = {}
-
-    for di, df in enumerate(dfs):
-        for benchmark in df["benchmark"].unique()[:2]:
-            for pi, ps in enumerate(df["problem_size"].unique()):
-                df_bp = df[(df["benchmark"] == benchmark) & (df["problem_size"] == ps)]
-                time_vals = get_agg_value(df_bp, "time", aggregate)
-                min_partition = get_partition_from_val(df_bp, time_vals.min(), aggregate)
-                max_partition = get_partition_from_val(df_bp, time_vals.max(), aggregate)
-                if (benchmark, pi) not in minmax:
-                    minmax[(benchmark, pi)] = [(arch_names[di], min_partition, max_partition)]
-                else:
-                    minmax[(benchmark, pi)].append((arch_names[di], min_partition, max_partition))
-
-    for di, df in enumerate(dfs):
-        if di != 1: continue
-        for benchmark in df["benchmark"].unique()[:2]:
-            fig.suptitle(f"Runtime Distribution of {benchmark}", fontsize=20)
-
-            for pi, problem_size in enumerate(df["problem_size"].unique()):
-                annotations = []
-                ax = fig.add_subplot(1, len(df["problem_size"].unique()), pi + 1)
-                ax.set_title(f"Array Size: {problem_size}", fontsize=18)
-                heights, edges = plot_histogram(
-                    ax, df, problem_size, benchmark, aggregate, annotations, annotate="default", verbose=False
-                )
-
-                df_bp = df[(df["benchmark"] == benchmark) & (df["problem_size"] == problem_size)]
-                print(arch_names[di], benchmark, problem_size)
-                time_vals = np.sort(get_agg_value(df_bp, "time", aggregate))
-                for item in minmax[(benchmark, pi)]:
-                    min_val = get_agg_value(df_bp[df_bp["container"] == item[1]], "time", aggregate).iloc[0]
-                    max_val = get_agg_value(df_bp[df_bp["container"] == item[2]], "time", aggregate).iloc[0]
-                    print(f"\t{item[0]}: min {min_val:.2f} - {get_rank(min_val, time_vals):.2f}%, max {max_val:.2f} - {get_rank(max_val, time_vals):.2f}%")
-                    imin = min(int(np.digitize(min_val, edges)) - 1, len(heights) - 1)
-                    imax = min(int(np.digitize(max_val, edges)) - 1, len(heights) - 1)
-                    annotate_point(ax, min_val, heights[imin], f"{item[0]} Min", "k", annotations)
-                    annotate_point(ax, max_val, heights[imax], f"{item[0]} Max", "k", annotations)
-                ax.set_ylim(top=15e4)
-                adjust_annotations(ax, annotations)
-
-            fig.tight_layout()
-            output_file = os.path.join(
-                output_dir,
-                f"{Path(files[di]).stem}_{benchmark}_{aggregate}_runtime_histogram_allminmax.{fmt}",
-            )
-            print(f"Saving {output_file}...")
-            savefig(fig, output_file)
-            fig.clf()  # Clear the figure to free memory for the next plot
+    fig.clf()  # Clear the figure to free memory for the next plot
 
 
 ############
@@ -648,7 +568,7 @@ def adjust_xticks(ax, xvals):
             xtick.set_y(-0.045)
 
 
-def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None, stddev="stddev"):
+def scatter(ax, df, val, aggregate, sorted_indices=None, stddev="stddev"):
     """
     Plot a scatter of the given value for each partition in the DataFrame, sorted by the given value.
     AoS and SoA partitions are highlighted in red and orange respectively, and the standard deviation
@@ -670,9 +590,11 @@ def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None, stddev="stdde
 
     if stddev == "stddev":
         sorted_stddev = np.array(get_agg_value(df, val, "stddev").iloc[sorted_indices])
-    else: # minmax
-        sorted_stddev = [sorted_vals - get_agg_value(df, val, "min").iloc[sorted_indices],
-                         get_agg_value(df, val, "max").iloc[sorted_indices] - sorted_vals]
+    else:  # minmax
+        sorted_stddev = [
+            sorted_vals - get_agg_value(df, val, "min").iloc[sorted_indices],
+            get_agg_value(df, val, "max").iloc[sorted_indices] - sorted_vals,
+        ]
 
     sorted_containers = (
         df.groupby("container")["time"].mean().index[sorted_indices]
@@ -704,7 +626,7 @@ def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None, stddev="stdde
     )
 
     # Overlap with bars for AoS partitions in red to highlight them
-    aos_indices = [i for i, c in enumerate(sorted_containers) if c in aos]
+    aos_indices = [i for i, c in enumerate(sorted_containers) if c in aos_containers]
     ax.scatter(
         sorted_containers[aos_indices],
         sorted_vals[aos_indices],
@@ -716,7 +638,7 @@ def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None, stddev="stdde
     )
 
     # Overlap with bars for SoA partitions in orange to highlight them
-    soa_indices = [i for i, c in enumerate(sorted_containers) if c in soa]
+    soa_indices = [i for i, c in enumerate(sorted_containers) if c in soa_containers]
     ax.scatter(
         sorted_containers[soa_indices],
         sorted_vals[soa_indices],
@@ -724,7 +646,7 @@ def scatter(ax, df, val, aggregate, aos, soa, sorted_indices=None, stddev="stdde
         s=5,
         label="SoA",
         zorder=20,
-        rasterized=True
+        rasterized=True,
     )
 
     return sorted_indices, sorted_containers
@@ -756,7 +678,7 @@ def map_metric_name(metric, time_unit):
         return metric
 
 
-def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None, stddev="stddev"):
+def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None, err="stddev"):
     """
     Plot a scatter plot for each benchmark and problem size, for the given metrics.
     The bars are sorted by the first metric.
@@ -765,7 +687,7 @@ def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None, stddev=
     :param output_dir: Directory to save the output plots
     :param aggregate: Aggregation method for the runtime (e.g., "avg" or "median")
     :param metrics: List of metrics to plot (e.g., ["time", "PAPI_TOT_INS"])
-    :param stddev: Standard deviation mode, stddev or minmax
+    :param err: Error bar mode, stddev or minmax
     """
 
     def plot_axes(ax, df, sorted_containers, metric):
@@ -800,36 +722,53 @@ def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None, stddev=
         else:
             ax.set_ylim(bottom=0, top=ax.get_ylim()[1] * 1.2)
         ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:g}"))
-        if ax.get_ylim()[1] / (ax.get_ylim()[0] + .00001) < 10:
+        if ax.get_ylim()[1] / (ax.get_ylim()[0] + 0.00001) < 10:
             ax.yaxis.set_minor_formatter(ticker.StrMethodFormatter("{x:g}"))
         ax.set_ylabel(
             map_metric_name(metric, time_unit=df["time_unit"].iloc[0]), fontsize=14
         )
 
         annotations = []
-        annotate_point(ax, aos_containers[0], get_val_from_partition(df, aos_containers[0], metric, aggregate),
-                       "AoS", aos_color, annotations)
-        annotate_point(ax, soa_containers[0], get_val_from_partition(df, soa_containers[0], metric, aggregate),
-                       "SoA", soa_color, annotations)
+        annotate_point(
+            ax,
+            aos_containers[0],
+            get_val_from_partition(df, aos_containers[0], metric, aggregate),
+            "AoS",
+            aos_color,
+            annotations,
+        )
+        annotate_point(
+            ax,
+            soa_containers[0],
+            get_val_from_partition(df, soa_containers[0], metric, aggregate),
+            "SoA",
+            soa_color,
+            annotations,
+        )
         adjust_annotations(ax, annotations)
 
         ax.legend(loc="best")
 
-    fig = plt.figure(figsize=(9, 5 * len(metrics)))
+    fig = plt.figure(figsize=(9 * len(df["benchmark"].unique()), 5 * len(metrics)))
+    axs = fig.subplots(len(metrics), len(df["benchmark"].unique())).flatten()
     problem_size = df["problem_size"].max()
 
     for ib, benchmark in enumerate(df["benchmark"].unique()):
-        fig.suptitle(f"{benchmark}", fontsize=20, y=0.98)
+        ax = axs[ib]
+        ax.set_title(f"{benchmark}", fontsize=20)
 
         df_bp = df[
             (df["benchmark"] == benchmark) & (df["problem_size"] == problem_size)
         ]
 
         # Plot the first metric
-        ax = fig.add_subplot(len(metrics), 1, 1)
         if not sort_by:
             sorted_indices, sorted_containers = scatter(
-                ax, df_bp, metrics[0], aggregate, aos_containers, soa_containers, stddev=stddev
+                ax,
+                df_bp,
+                metrics[0],
+                aggregate,
+                stddev=err,
             )
         else:
             sorted_indices = np.argsort(get_agg_value(df_bp, sort_by, aggregate))
@@ -838,36 +777,32 @@ def plot_scatter(file, df, output_dir, aggregate, metrics, sort_by=None, stddev=
                 df_bp,
                 metrics[0],
                 aggregate,
-                aos_containers,
-                soa_containers,
                 sorted_indices,
-                stddev=stddev,
+                stddev=err,
             )
         plot_axes(ax, df_bp, sorted_containers, metrics[0])
 
         # Plot scatters for all other metrics, with the same order of containers as the first metric
         for mi, metric in enumerate(metrics[1:], start=1):
-            ax = fig.add_subplot(len(metrics), 1, mi + 1)
+            ax = axs[ib + mi * len(df["benchmark"].unique())]
             scatter(
                 ax,
                 df_bp,
                 metric,
                 aggregate,
-                aos_containers,
-                soa_containers,
                 sorted_indices,
-                stddev=stddev,
+                stddev=err,
             )
             plot_axes(ax, df_bp, sorted_containers, metric)
 
-        fig.tight_layout()
-        output_file = os.path.join(
-            output_dir,
-            f"{Path(file).stem}_{benchmark}_{aggregate}_{stddev}err_scatter_{'_'.join([m.split(':')[0] for m in metrics])}.{fmt}",
-        )
-        print(f"Saving {output_file}...")
-        savefig(fig, output_file)
-        fig.clf()  # Clear the figure to free memory for the next plot
+    fig.tight_layout()
+    output_file = os.path.join(
+        output_dir,
+        f"{Path(file).stem}_{aggregate}_{err}_scatter_{'_'.join([m.split(':')[0] for m in metrics])}.{fmt}",
+    )
+    print(f"Saving {output_file}...")
+    savefig(fig, output_file)
+    fig.clf()  # Clear the figure to free memory for the next plot
 
 
 if __name__ == "__main__":
@@ -907,6 +842,9 @@ if __name__ == "__main__":
             args.output = os.path.dirname(args.input[i])
 
         df = pd.read_csv(input)
+        # keep every 10th row to reduce data size
+        df = df.iloc[::10].reset_index(drop=True)
+
 
         container_base_name = (
             "PartitionedContainerContiguous"
@@ -922,9 +860,32 @@ if __name__ == "__main__":
             "_".join([str(p) for p in perm]) for perm in permutations(range(n_members))
         ]
 
-        plot_scatter(input, df, args.output, args.aggregate, ["time"], stddev="minmax")
-        # plot_scatter(input, df, args.output, args.aggregate, ["PAPI_TOT_INS", "time"], stddev="stddev")
-        # plot_scatter(input, df, args.output, args.aggregate, ["PAPI_L1_DCM"], sort_by="time", stddev="stddev")
+        plot_runtime_histogram_per_benchmark(
+            input, df, args.output, args.aggregate, annotate="default"
+        )
+        plot_runtime_histogram_max_psize(
+            input, df, args.output, args.aggregate, annotate="guidelines"
+        )
+        plot_scatter(input, df, args.output, args.aggregate, ["time"], err="stddev")
+        plot_scatter(
+            input,
+            df,
+            args.output,
+            args.aggregate,
+            ["PAPI_TOT_INS", "time"],
+            err="stddev",
+        )
+        plot_scatter(
+            input,
+            df,
+            args.output,
+            args.aggregate,
+            [
+                "ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR"
+            ],
+            sort_by="time",
+            err="stddev",
+        )
 
     ########
     # plot_runtime_histogram_all_minmax(args.input, [pd.read_csv(f) for f in args.input], args.output, args.aggregate)
