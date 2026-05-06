@@ -45,7 +45,7 @@ struct FileOpts {
   bool aggregate = false;                   // Option "--aggregate <bool>"
   size_t repetitions = 5;                   // Option "--repetitions <int>"
   size_t warmup = 1;                        // Option "--warmup <int>"
-  std::string papi_events = "PAPI_TOT_CYC"; // Option "--papi_events <string>"
+  std::string papi_events = ""; // Option "--papi_events <string>"
 };
 extern FileOpts opts;
 FileOpts opts;
@@ -241,12 +241,16 @@ void RunBenchmark1(BenchmarkFunc benchmarkfunc, std::string benchmark_name,
     std::vector<double> results(std::min(out_size, max_results_size));
 
     // Measure time taken by the benchmark function
-    PAPI_reset(papi_eventset);
-    CHECK_PAPI_RETURN(PAPI_start(papi_eventset));
+    if (!opts.papi_events.empty()) {
+      PAPI_reset(papi_eventset);
+      CHECK_PAPI_RETURN(PAPI_start(papi_eventset));
+    }
     auto start = Clock::now();
     benchmarkfunc(v1, results, extra_args...);
     auto end = Clock::now();
-    CHECK_PAPI_RETURN(PAPI_stop(papi_eventset, count.data()));
+    if (!opts.papi_events.empty()) {
+      CHECK_PAPI_RETURN(PAPI_stop(papi_eventset, count.data()));
+    }
 
     // Skip warmup iterations
     if (r < opts.warmup) {
@@ -299,13 +303,17 @@ void RunBenchmark2(BenchmarkFunc benchmarkfunc, std::string benchmark_name,
     // Cap the results size to avoid excessive memory usage.
     std::vector<double> results(std::min(out_size, max_results_size));
 
-    // Measure time taken by the benchmark function.
-    PAPI_reset(papi_eventset);
-    CHECK_PAPI_RETURN(PAPI_start(papi_eventset));
+    // Measure time taken by the benchmark function
+    if (!opts.papi_events.empty()) {
+      PAPI_reset(papi_eventset);
+      CHECK_PAPI_RETURN(PAPI_start(papi_eventset));
+    }
     auto start = Clock::now();
     benchmarkfunc(v1, v2, results, extra_args...);
     auto end = Clock::now();
-    CHECK_PAPI_RETURN(PAPI_stop(papi_eventset, count.data()));
+    if (!opts.papi_events.empty()) {
+      CHECK_PAPI_RETURN(PAPI_stop(papi_eventset, count.data()));
+    }
 
     // Skip warmup iterations
     if (r < opts.warmup) {
@@ -510,8 +518,10 @@ int main(int argc, char *argv[]) {
     RunAllBenchmarks<PartitionedContainer0123456>(n, alignment);
   }
 
-  PAPI_cleanup_eventset(papi_eventset);
-  PAPI_destroy_eventset(&papi_eventset);
+  if (!opts.papi_events.empty()) {
+    PAPI_cleanup_eventset(papi_eventset);
+    PAPI_destroy_eventset(&papi_eventset);
+  }
   return 0;
 }
 // END GENERATED CODE
