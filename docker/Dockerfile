@@ -36,6 +36,17 @@ RUN wget https://github.com/RRZE-HPC/likwid/archive/refs/tags/v${LIKWID_VERSION}
     && cd /root
 ENV PATH=$PATH:"/usr/local/likwid/bin"
 
+# Install papi
+ENV PAPI_VERSION=7.2.0
+RUN wget https://github.com/icl-utk-edu/papi/releases/download/papi-7-2-0-t/papi-${PAPI_VERSION}.tar.gz \
+    && tar -xzf papi-${PAPI_VERSION}.tar.gz \
+    && rm papi-${PAPI_VERSION}.tar.gz \
+    && cd papi-${PAPI_VERSION}/src \
+    && ./configure \
+    && make -j $(nproc) \
+    && make install \
+    && cd /root
+
 # Install the benchmarks repo
 ENV DLB_VERSION=europar26_artifact
 RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git all_layouts \
