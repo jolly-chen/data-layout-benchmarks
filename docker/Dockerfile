@@ -53,7 +53,7 @@ ENV DLB_VERSION=europar26_artifact
 #     && cd all_layouts \
 #     && git checkout ${DLB_VERSION} \
 #     && python3 generate_datastructures.py --data_spec particle.spec \
-#     && cmake . -Dvec=ON \
+#     && cmake . \
 #     && make \
 #     && cd /root
 
@@ -61,7 +61,7 @@ RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git some_layo
     && cd some_layouts \
     && git checkout ${DLB_VERSION} \
     && python3 generate_datastructures.py --data_spec particle.spec --only_every 10 \
-    && cmake . -Dvec=ON \
+    && cmake . \
     && make \
     && cd /root
 
