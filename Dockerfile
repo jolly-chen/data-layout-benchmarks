@@ -32,8 +32,7 @@ RUN wget https://github.com/RRZE-HPC/likwid/archive/refs/tags/v${LIKWID_VERSION}
     && rm v${LIKWID_VERSION}.tar.gz \
     && cd likwid-${LIKWID_VERSION} \
     && make -j $(nproc)\
-    && make install \
-    && cd /root
+    && make install
 ENV PATH=$PATH:"/usr/local/likwid/bin"
 
 # Install papi
@@ -44,31 +43,17 @@ RUN wget https://github.com/icl-utk-edu/papi/releases/download/papi-7-2-0-t/papi
     && cd papi-${PAPI_VERSION}/src \
     && ./configure \
     && make -j $(nproc) \
-    && make install \
-    && cd /root
+    && make install
 
-# Install the benchmarks repo
-ENV DLB_VERSION=europar26_artifact
-RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git all_layouts \
-    && cd all_layouts \
-    && git checkout ${DLB_VERSION} \
-    && python3 generate_datastructures.py --data_spec particle.spec \
-    && cmake . \
-    && make \
-    && cd /root
-
-RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git some_layouts \
-    && cd some_layouts \
-    && git checkout ${DLB_VERSION} \
-    && python3 generate_datastructures.py --data_spec particle.spec --only_every 10 \
-    && cmake . \
-    && make \
-    && cd /root
+# Copy benchmarks repo
+COPY src/ /root/src/
 
 # Download datasets
-RUN mkdir datasets && cd datasets \
+RUN cd src && mkdir datasets && cd datasets \
     && wget https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/3m.zip && unzip 3m.zip && rm -f 3m.zip \
-    && wget https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/3m_v2.zip && unzip 3m_v2.zip && rm -f 3m_v2.zip \
-    && cd /root
+    && wget https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/3m_v2.zip && unzip 3m_v2.zip && rm -f 3m_v2.zip
+
+COPY run_in_container.sh /root/src/run_in_container.sh
+RUN chmod +x /root/src/run_in_container.sh
 
 CMD ["tail", "-f", "/dev/null"]
