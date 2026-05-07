@@ -24,6 +24,16 @@ def savefig(fig, output_file):
     fig.savefig(output_file, dpi=1200)
 
 
+def find_bin(edges, val):
+    """
+    Find the index of the bin corresponding to a given value.
+
+    :param edges: Edges of the histogram bins
+    :param val: Value to find the bin for
+    :return: Index of the bin corresponding to the value
+    """
+    return np.clip(np.digitize(val, edges) - 1, 0, len(edges)-2)
+
 def get_agg_value(df, val, aggregate):
     """
     Get the aggregation of the given value for each partition in the DataFrame, using the specified aggregation method.
@@ -316,12 +326,11 @@ def annotate_common(ax, df, edges, annotations, aggregate, verbose=True):
         align="mid",
         label="AoS (Reordered)",
     )
-
     if not aos_vals.empty:
         annotate_point(
             ax,
             aos_vals.iloc[0],
-            heights[int(np.digitize(aos_vals.iloc[0], edges)) - 1],
+            find_bin(edges, aos_vals.iloc[0]),
             (
                 f"AoS: {aos_vals.iloc[0]:.2f}\n({aos_containers[0]})"
                 if verbose
@@ -350,7 +359,7 @@ def annotate_common(ax, df, edges, annotations, aggregate, verbose=True):
         annotate_point(
             ax,
             soa_vals.iloc[0],
-            heights[int(np.digitize(soa_vals.iloc[0], edges)) - 1],
+            find_bin(edges, soa_vals.iloc[0]),
             (
                 f"SoA: {soa_vals.iloc[0]:.2f}\n({soa_containers[0]})"
                 if verbose
@@ -426,10 +435,10 @@ def plot_histogram(
             label="Used not mixed with Unused",
         )
 
-        median_unm = unm_vals.median()
-        max_95_percentile_unm = np.quantile(np.sort(unm_vals), 0.94)
-        median_partition_unm = np.digitize(median_unm, np.sort(time_vals)) - 1
-        max95_partition_unm = np.digitize(max_95_percentile_unm, np.sort(time_vals)) - 1
+        # median_unm = unm_vals.median()
+        # max_95_percentile_unm = np.quantile(np.sort(unm_vals), 0.94)
+        # median_partition_unm = find_bin(edges, median_unm)
+        # max95_partition_unm = find_bin(edges, max_95_percentile_unm)
 
         # print(
         #     f"{benchmark} - Used not mixed with Unused:\n"
@@ -459,10 +468,10 @@ def plot_histogram(
             align="mid",
             label="SoA of Used Members",
         )
-        max_95_percentile_ua = np.quantile(np.sort(ua_vals), 0.95)
-        median_ua = ua_vals.median()
-        max95_partition_ua = np.digitize(max_95_percentile_ua, np.sort(time_vals)) - 1
-        median_partition_ua = np.digitize(median_ua, np.sort(time_vals)) - 1
+        # max_95_percentile_ua = np.quantile(np.sort(ua_vals), 0.95)
+        # median_ua = ua_vals.median()
+        # max95_partition_ua = find_bin(edges, max_95_percentile_ua)
+        # median_partition_ua = find_bin(edges, median_ua)
 
     ax.set_ylabel("Frequency", fontsize=14)
     ax.set_yscale("symlog")
