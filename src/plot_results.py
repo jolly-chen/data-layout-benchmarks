@@ -530,7 +530,7 @@ def plot_runtime_histogram_per_benchmark(
     n_problem_sizes = len(df["problem_size"].unique())
 
     for ib, benchmark in enumerate(df["benchmark"].unique()):
-        row_title_y = 1 - (ib / n_benchmarks) - 0.02
+        row_title_y = 1 - (ib / n_benchmarks) - 0.04
         fig.text(0.5, row_title_y, benchmark, ha="center", va="bottom", fontsize=20)
 
         for pi, problem_size in enumerate(df["problem_size"].unique()):
