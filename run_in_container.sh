@@ -12,7 +12,7 @@ if [[ "$*" == *"--quick"* ]]; then
     python3 generate_datastructures.py --data_spec particle.spec --only_every 10
 else
     echo "Running in full mode (all data layouts)."
-    python3 generate_datastructures.py --data_spec particle.spec
+    python3 generate_datastructures.py --data_spec particle.spec --repetitions 10
 fi
 
 cmake . -Dvec=on
@@ -22,6 +22,7 @@ make
 # Execute the benchmrk suite
 #
 
+# Check for availability of performance events and set flags accordingly
 papi_flags=""
 if papi_native_avail | grep -q "ANY_DATA_CACHE_FILLS_FROM_SYSTEM"; then
     papi_cache_fill_avail=true
@@ -39,6 +40,8 @@ else
     echo "Warning: performance event PAPI_TOT_INS not available for Figure 6. Will run without it."
 fi
 
+# Run the benchmark with the appropriate flags
 ./main --input1 datasets/3m --input2 datasets/3m_v2 --output results/results.csv --papi_events $papi_flags
 
+# Generate the plots from the results
 python3 plot_results.py -i results/results.csv -o /root/src/results
