@@ -7,12 +7,11 @@ mkdir results
 # Generate the data structures for the benchmarks and compile with archjitecture-specific optimizations
 #
 
-papi_flags=""
 if [[ "$*" == *"--quick"* ]]; then
-    echo "Running in QUICK mode (only some data layouts)."
+    echo "Running in quick mode (only some data layouts)."
     python3 generate_datastructures.py --data_spec particle.spec --only_every 2000
 else
-    echo "Running in FULL mode (all data layouts)."
+    echo "Running in full mode (all data layouts)."
     python3 generate_datastructures.py --data_spec particle.spec
 fi
 
@@ -23,6 +22,7 @@ make
 # Execute the benchmrk suite
 #
 
+papi_flags=""
 if papi_native_avail | grep -q "ANY_DATA_CACHE_FILLS_FROM_SYSTEM"; then
     papi_cache_fill_avail=true
     echo "Performance event ANY_DATA_CACHE_FILLS_FROM_SYSTEM available for Figure 5."
@@ -33,14 +33,12 @@ else
 fi
 
 if papi_avail | grep "PAPI_TOT_INS" | grep -q "Yes"; then
-    papi_tot_ins_avail=true
     echo "Performance event PAPI_TOT_INS available for Figure 6."
     papi_flags="$papi_flags,PAPI_TOT_INS"
 else
-    papi_tot_ins_avail=false
     echo "Warning: performance event PAPI_TOT_INS not available for Figure 6. Will run without it."
 fi
 
-./main --input1 datasets/3m --input2 datasets/3m_v2 --output results/results.csv --papi_events="$papi_flags"
+./main --input1 datasets/3m --input2 datasets/3m_v2 --output results/results.csv --papi_events $papi_flags
 
 python3 plot_results.py -i results/results.csv -o /root/src/results
