@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cd /root/src
-mkdir results
+mkdir -p results
 
 #
 # Generate the data structures for the benchmarks and compile with archjitecture-specific optimizations
