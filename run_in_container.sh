@@ -9,7 +9,7 @@ mkdir -p results
 
 if [[ "$*" == *"--quick"* ]]; then
     echo "Running in quick mode (only some data layouts)."
-    python3 generate_datastructures.py --data_spec particle.spec --only_every 2000
+    python3 generate_datastructures.py --data_spec particle.spec --only_every 10
 else
     echo "Running in full mode (all data layouts)."
     python3 generate_datastructures.py --data_spec particle.spec
