@@ -872,20 +872,7 @@ if __name__ == "__main__":
         plot_runtime_histogram_per_benchmark(
             input, df, args.output, args.aggregate, annotate="default", output_file="results/figure3.pdf"
         )
-        plot_runtime_histogram_max_psize(
-            input, df, args.output, args.aggregate, annotate="guidelines", output_file="results/figure4.pdf"
-        )
-        plot_scatter(input, df, args.output, args.aggregate, ["time"], err="stddev", output_file="results/figure5.pdf")
-        if "PAPI_TOT_INS" in df.columns:
-            plot_scatter(
-                input,
-                df,
-                args.output,
-                args.aggregate,
-                ["PAPI_TOT_INS", "time"],
-                err="stddev",
-                output_file="results/figure6.pdf"
-            )
+        plot_scatter(input, df, args.output, args.aggregate, ["time"], err="stddev", output_file="results/figure4.pdf")
         if "ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR" in df.columns:
             plot_scatter(
                 input,
@@ -897,5 +884,18 @@ if __name__ == "__main__":
                 ],
                 err="stddev",
                 sort_by="time",
-                output_file="results/figure7.pdf"
+                output_file="results/figure5.pdf"
             )
+        if "PAPI_TOT_INS" in df.columns:
+            plot_scatter(
+                input,
+                df,
+                args.output,
+                args.aggregate,
+                ["PAPI_TOT_INS", "time"],
+                err="stddev",
+                output_file="results/figure6.pdf"
+            )
+        plot_runtime_histogram_max_psize(
+            input, df, args.output, args.aggregate, annotate="guidelines", output_file="results/figure7.pdf"
+        )
