@@ -28,7 +28,7 @@ ENTRYPOINT ["/tini", "--"]
 # Install likwid
 ENV LIKWID_VERSION=5.5.1
 RUN wget https://github.com/RRZE-HPC/likwid/archive/refs/tags/v${LIKWID_VERSION}.tar.gz \
-    && tar -xzf v${LIKWID_VERSION}.tar.gz \
+    && tar --no-same-owner -xzf v${LIKWID_VERSION}.tar.gz \
     && rm v${LIKWID_VERSION}.tar.gz \
     && cd likwid-${LIKWID_VERSION} \
     && make -j $(nproc)\
@@ -38,7 +38,7 @@ ENV PATH=$PATH:"/usr/local/likwid/bin"
 # Install papi
 ENV PAPI_VERSION=7.2.0
 RUN wget https://github.com/icl-utk-edu/papi/releases/download/papi-7-2-0-t/papi-${PAPI_VERSION}.tar.gz \
-    && tar -xzf papi-${PAPI_VERSION}.tar.gz \
+    && tar --no-same-owner -xzf papi-${PAPI_VERSION}.tar.gz \
     && rm papi-${PAPI_VERSION}.tar.gz \
     && cd papi-${PAPI_VERSION}/src \
     && ./configure \
