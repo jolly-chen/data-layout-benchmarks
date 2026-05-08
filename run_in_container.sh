@@ -1,6 +1,8 @@
 #!/bin/bash
 
 cd /root/src
+ 
+rm -rf results
 mkdir -p results
 
 #
@@ -41,6 +43,7 @@ else
 fi
 
 # Run the benchmark with the appropriate flags
+papi_flags_str=$(IFS=, ; echo "${papi_flags[*]}")
 ./main --input1 datasets/3m --input2 datasets/3m_v2 --output results/results.csv --papi_events "${papi_flags_str}"
 
 # Generate the plots from the results
