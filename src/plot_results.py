@@ -435,16 +435,16 @@ def plot_histogram(
             label="Used not mixed with Unused",
         )
 
-        # median_unm = unm_vals.median()
-        # max_95_percentile_unm = np.quantile(np.sort(unm_vals), 0.94)
-        # median_partition_unm = find_bin(edges, median_unm)
-        # max95_partition_unm = find_bin(edges, max_95_percentile_unm)
-
-        # print(
-        #     f"{benchmark} - Used not mixed with Unused:\n"
-        #     f"\tmax95 ({max_95_percentile_unm}, {max95_partition_unm}) {max95_partition_unm / len(time_vals) * 100:.2f}%\n"
-        #     f"\tmedian ({median_unm}, {median_partition_unm}) {median_partition_unm / len(time_vals) * 100:.2f}%"
-        # )
+        median_unm = unm_vals.median()
+        max_95_percentile_unm = np.quantile(np.sort(unm_vals), 0.95)
+        median_partition_unm = find_bin(np.sort(time_vals), median_unm)
+        max95_partition_unm = find_bin(np.sort(time_vals), max_95_percentile_unm)
+        with open("results/guidelines_percentages.txt", "a") as f:
+            f.write(
+                f"{benchmark} - Used not mixed with Unused:\n"
+                f"\t95% to be in top {max95_partition_unm / len(time_vals) * 100:.2f}%\n"
+                f"\t50% to be in top {median_partition_unm / len(time_vals) * 100:.2f}%\n\n"
+            )
 
         ua_vals = get_agg_value(
             df_bp[
@@ -468,11 +468,18 @@ def plot_histogram(
             align="mid",
             label="SoA of Used Members",
         )
-        # max_95_percentile_ua = np.quantile(np.sort(ua_vals), 0.95)
-        # median_ua = ua_vals.median()
-        # max95_partition_ua = find_bin(edges, max_95_percentile_ua)
-        # median_partition_ua = find_bin(edges, median_ua)
+        max_95_percentile_ua = np.quantile(np.sort(ua_vals), 0.95)
+        median_ua = ua_vals.median()
+        max95_partition_ua = find_bin(np.sort(time_vals), max_95_percentile_ua)
+        median_partition_ua = find_bin(np.sort(time_vals), median_ua)
+        with open("results/guidelines_percentages.txt", "a") as f:
+            f.write(
+                f"{benchmark} - SoA of Used Members:\n"
+                f"\t95% to be in top {max95_partition_ua / len(time_vals) * 100:.2f}%\n"
+                f"\t50% to be in top {median_partition_ua / len(time_vals) * 100:.2f}%\n\n"
+            )
 
+        
     ax.set_ylabel("Frequency", fontsize=14)
     ax.set_yscale("symlog")
     y_minor = matplotlib.ticker.LogLocator(
