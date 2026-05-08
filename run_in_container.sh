@@ -23,11 +23,11 @@ make
 #
 
 # Check for availability of performance events and set flags accordingly
-papi_flags=""
+papi_flags=()
 if papi_native_avail | grep -q "ANY_DATA_CACHE_FILLS_FROM_SYSTEM"; then
     papi_cache_fill_avail=true
     echo "Performance event ANY_DATA_CACHE_FILLS_FROM_SYSTEM available for Figure 5."
-    papi_flags="ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR"
+    papi_flags+=("ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR")
 else
     papi_cache_fill_avail=false
     echo "Warning: performance event ANY_DATA_CACHE_FILLS_FROM_SYSTEM not available for Figure 5. Will run without it."
@@ -35,13 +35,13 @@ fi
 
 if papi_avail | grep "PAPI_TOT_INS" | grep -q "Yes"; then
     echo "Performance event PAPI_TOT_INS available for Figure 6."
-    papi_flags="$papi_flags,PAPI_TOT_INS"
+    papi_flags+=("PAPI_TOT_INS")
 else
     echo "Warning: performance event PAPI_TOT_INS not available for Figure 6. Will run without it."
 fi
 
 # Run the benchmark with the appropriate flags
-./main --input1 datasets/3m --input2 datasets/3m_v2 --output results/results.csv --papi_events $papi_flags
+./main --input1 datasets/3m --input2 datasets/3m_v2 --output results/results.csv --papi_events "${papi_flags_str}"
 
 # Generate the plots from the results
 python3 plot_results.py -i results/results.csv -o /root/src/results
