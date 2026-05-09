@@ -245,8 +245,7 @@ def write_contiguous_partition(
     :param partition: List of partitions, each a list of member indices
     :param members: List of tuples (data_type, member_name) containing all members in the original struct
     """
-    f.write(
-        f"""
+    f.write(f"""
 struct PartitionedContainerContiguous{partition_string} {{
 { define_contiguous_partitions_struct(partition, struct_name_base) }
     std::byte *storage;
@@ -274,8 +273,7 @@ struct PartitionedContainerContiguous{partition_string} {{
 { deallocate_contiguous_partitions(partition, struct_name_base) }
     }}
 }};
-"""
-    )
+""")
 
 
 def write_partition(f, struct_name_base, partition_string, partition, members):
@@ -290,8 +288,7 @@ def write_partition(f, struct_name_base, partition_string, partition, members):
     :param partition: List of partitions, each a list of member indices
     :param members: List of tuples (data_type, member_name) containing all members in the original structure
     """
-    f.write(
-        f"""
+    f.write(f"""
 struct PartitionedContainer{partition_string} {{
 { define_partitions_struct(partition, struct_name_base) }
     size_t n;
@@ -313,8 +310,7 @@ struct PartitionedContainer{partition_string} {{
 { deallocate_partitions(partition, struct_name_base) }
     }}
 }};
-"""
-    )
+""")
 
 
 def write_subsets(f, struct_name_base, members, subsets):
@@ -397,13 +393,52 @@ def write_partitioned_structs(
                 ["".join(str(m) for m in subset) for subset in partition]
             )
 
-            if only_every and ip % only_every != 0 and \
-                partition_string != aos_string and partition_string != soa_string:
+            # include best/worst layouts from paper for artifact
+            if (
+                only_every
+                and ip % only_every != 0
+                and partition_string != aos_string
+                and partition_string != soa_string
+                # Small problem sizes
+                and partition_string != "0_25416_3"  # zen 2 SIM best
+                and partition_string != "324506_1"  # zen 2 SIM worst
+                and partition_string != "132540_6"  # zen 4 SIM best
+                and partition_string != "4350216"  # zen 4 SIM worst
+                and partition_string != "6410253"  # hsw SIM best
+                and partition_string != "2064_351"  # hsw SIM worst
+                and partition_string != "013624_5"  # skl SIM best
+                and partition_string != "01_54236"  # skl SIM worst
+                and partition_string != "0_4312_5_6"  # zen 2 RIM best
+                and partition_string != "05_26341"  # zen 2 RIM worst
+                and partition_string != "42013_65"  # zen 4 RIM best
+                and partition_string != "40152_63"  # zen 4 RIM worst
+                and partition_string != "12043_56"  # hsw RIM best
+                and partition_string != "52430_61"  # hsw RIM worst
+                and partition_string != "206451_3"  # skl RIM best
+                and partition_string != "01_46523"  # skl RIM worst
+                # Large problem sizes
+                and partition_string != "30_241_5_6"  # zen 2 SIM best
+                and partition_string != "1043652"  # zen 2 SIM worst
+                and partition_string != "240531_6"  # zen 4 SIM best
+                and partition_string != "3645201"  # zen 4 SIM worst
+                and partition_string != "0234_1_56"  # hsw SIM best
+                and partition_string != "24103_65"  # hsw SIM worst
+                and partition_string != "06_2314_5"  # skl SIM best
+                and partition_string != "01_56423"  # skl SIM worst
+                and partition_string != "60_1_2_3_4_5"  # zen 2 RIM best
+                and partition_string != "0164532"  # zen 2 RIM worst
+                and partition_string != "0_124_3_5_6"  # zen 4 RIM best
+                and partition_string != "20153_64"  # zen 4 RIM worst
+                and partition_string != "0_421_3_65"  # hsw RIM best
+                and partition_string != "0125364"  # hsw RIM worst
+                and partition_string != "605_1234"  # skl RIM best
+                and partition_string != "510_234_6"  # skl RIM worst
+            ):
                 continue
 
             # Skip duplicates
             if partition_string in p_list:
-                # print(f"Skipping duplicate partition {partition_string}")
+                print(f"Skipping duplicate partition {partition_string}")
                 continue
             p_list.append(partition_string)
 
@@ -473,7 +508,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--contiguous",
-        action='store_true',
+        action="store_true",
         default=False,
         help="Generate contiguous partitioned structures",
     )
@@ -516,5 +551,5 @@ if __name__ == "__main__":
         end,
         args.contiguous,
         args.only,
-        args.only_every
+        args.only_every,
     )
