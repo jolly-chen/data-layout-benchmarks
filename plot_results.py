@@ -622,7 +622,7 @@ def plot_runtime_histogram_all_minmax(files, dfs, output_dir, aggregate):
     fig.tight_layout()
     output_file = os.path.join(
         output_dir,
-        f"{Path(files[0]).stem}_{aggregate}_runtime_histogram_allminmax_1.{fmt}",
+        f"{Path(files[0]).stem}_{aggregate}_runtime_histogram_allminmax.{fmt}",
     )
     print(f"Saving {output_file}...")
     # plt.show() # Uncomment to display the plot to adjust the annotation positions manually if needed
@@ -976,7 +976,7 @@ if __name__ == "__main__":
 
     ########
     for _ in range(len(args.input)):
-        plot_runtime_histogram_all_minmax(args.input, dfs, args.output, args.aggregate)
+        plot_runtime_histogram_all_minmax(args.input, [ pd.read_csv(input) for input in args.input ], args.output, args.aggregate)
         args.input = np.roll(args.input, -1)
 
     plot_runtime_histogram_max_psize_all_archs(
