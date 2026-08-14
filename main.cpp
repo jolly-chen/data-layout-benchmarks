@@ -33,13 +33,12 @@ using unit = std::milli;
 /* 2^16, maximum number of results to store to cap memory usage. */
 size_t max_results_size = 65536;
 
-std::vector<Particle> input1_data; // Cache for input1 data
-std::vector<Particle> input2_data; // Cache for input2 data
+// TODO: make Particle generic
+std::vector<std::vector<Particle>> input_data; // Cache for input data
 
 // Global options parsed from the command line.
 struct FileOpts {
-  std::string input1 = "";                  // Option "--input1 <string>"
-  std::string input2 = "";                  // Option "--input2 <string>"
+  std::string input = "";                   // Option "--input <string>"
   std::string output = "";                  // Option "--output <string>"
   std::string validation = "";              // Option "--validation <string>"
   bool aggregate = false;                   // Option "--aggregate <bool>"
@@ -65,37 +64,50 @@ std::ostream *output;
 /* Read Lorentzvector (pt, eta, phi, e) data from the given CSV file into
  * the container. */
 void ReadData(std::string filename, size_t n,
-              std::vector<Particle> &input_data) {
-  input_data.resize(n);
+              std::vector<std::vector<Particle>> &input_data) {
+  std::ifstream i_stream(filename);
+  if (i_stream.is_open()) {
+    size_t file_num = 0;
+    for( std::string input_file; getline( i_stream, input_file ); ) {
+        input_data.push_back(std::vector<Particle>(n));
 
-  std::ifstream is(filename);
-  if (is.is_open()) {
-    std::string line;
-    for (size_t i = 0; i < n; ++i) {
-      if (!getline(is, line)) {
-        throw std::runtime_error("Not enough data in file " + filename +
-                                 " for requested size " + std::to_string(n));
-        break;
+      std::ifstream ii_stream(input_file);
+      if (ii_stream.is_open()) {
+        std::string line;
+        for (size_t i = 0; i < n; ++i) {
+          if (!getline(ii_stream, line)) {
+            throw std::runtime_error("Not enough data in file " + filename +
+                                    " for requested size " + std::to_string(n));
+            break;
+          }
+
+          std::stringstream ss(line);
+          std::string token;
+
+          getline(ss, token, ',');
+          input_data[file_num][i].pt = std::stod(token);
+          getline(ss, token, ',');
+          input_data[file_num][i].eta = std::stod(token);
+          getline(ss, token, ',');
+          input_data[file_num][i].phi = std::stod(token);
+          getline(ss, token, ',');
+          input_data[file_num][i].e = std::stod(token);
+        }
+        ii_stream.close();
+      } else {
+        throw std::runtime_error("Failed to open file " + filename +
+                                " for reading");
       }
 
-      std::stringstream ss(line);
-      std::string token;
-      std::vector<std::string> temp;
-
-      getline(ss, token, ',');
-      input_data[i].pt = std::stod(token);
-      getline(ss, token, ',');
-      input_data[i].eta = std::stod(token);
-      getline(ss, token, ',');
-      input_data[i].phi = std::stod(token);
-      getline(ss, token, ',');
-      input_data[i].e = std::stod(token);
+      file_num++;
     }
-    is.close();
   } else {
     throw std::runtime_error("Failed to open file " + filename +
-                             " for reading");
+                          " for reading");
   }
+
+  input_data.resize(n);
+
 }
 
 /* Parse validation info from the given CSV file. */
@@ -231,10 +243,10 @@ void RunBenchmark1(BenchmarkFunc benchmarkfunc, std::string benchmark_name,
     // Initialize input container.
     Container v1(in_size, alignment);
     for (size_t i = 0; i < in_size; ++i) {
-      v1[i].pt = input1_data[i].pt;
-      v1[i].eta = input1_data[i].eta;
-      v1[i].phi = input1_data[i].phi;
-      v1[i].e = input1_data[i].e;
+      v1[i].pt = input_data[0][i].pt;
+      v1[i].eta = input_data[0][i].eta;
+      v1[i].phi = input_data[0][i].phi;
+      v1[i].e = input_data[0][i].e;
     }
 
     // Cap the results size to avoid excessive memory usage.
@@ -286,14 +298,14 @@ void RunBenchmark2(BenchmarkFunc benchmarkfunc, std::string benchmark_name,
     // Initialize input containers.
     Container v1(in_size, alignment), v2(in_size, alignment);
     for (size_t i = 0; i < in_size; ++i) {
-      v1[i].pt = input1_data[i].pt;
-      v1[i].eta = input1_data[i].eta;
-      v1[i].phi = input1_data[i].phi;
-      v1[i].e = input1_data[i].e;
-      v2[i].pt = input2_data[i].pt;
-      v2[i].eta = input2_data[i].eta;
-      v2[i].phi = input2_data[i].phi;
-      v2[i].e = input2_data[i].e;
+      v1[i].pt = input_data[0][i].pt;
+      v1[i].eta = input_data[0][i].eta;
+      v1[i].phi = input_data[0][i].phi;
+      v1[i].e = input_data[0][i].e;
+      v2[i].pt = input_data[1][i].pt;
+      v2[i].eta = input_data[1][i].eta;
+      v2[i].phi = input_data[1][i].phi;
+      v2[i].e = input_data[1][i].e;
     }
 
     // Cap the results size to avoid excessive memory usage.
@@ -360,10 +372,9 @@ void ParseOptions(int &argc, char **argv) {
         << "              [--validation VALIDATION_FILE] [--repetitions REPS]\n"
         << "options:\n"
         << "  --help                          Show this help message and exit\n"
-        << "  --input1 INPUT_FILE             File containing input1 data\n"
-        << "  --input2 INPUT_FILE             File containing input2 data\n"
+        << "  --input INPUT_FILE              File specifying files with input data\n"
         << "  --output OUTPUT_FILE            File to write results to\n"
-        << "  --validation VALIDATION_FILE    File containing the benchmark name, input1 size, max results size, and\n"
+        << "  --validation VALIDATION_FILE    File containing the benchmark name, input size, max results size, and\n"
         << "                                  name of the file with data to use for validation, separated by commas\n"
         << "                                  and one benchmark per line\n"
         << "  --aggregate {1|0}               Print aggregate results or each repetition (default: 0)\n"
@@ -374,11 +385,8 @@ void ParseOptions(int &argc, char **argv) {
        std::exit(EXIT_SUCCESS);
   }
 
-  auto input1 = cmdLineParser.GetCmdOption("--input1");
-  if (!input1.empty()) { opts.input1 = input1; }
-
-  auto input2 = cmdLineParser.GetCmdOption("--input2");
-  if (!input2.empty()) { opts.input2 = input2; }
+  auto input = cmdLineParser.GetCmdOption("--input");
+  if (!input.empty()) { opts.input = input; }
 
   auto output = cmdLineParser.GetCmdOption("--output");
   if (!output.empty()) { opts.output = output; }
@@ -399,8 +407,8 @@ void ParseOptions(int &argc, char **argv) {
   if (!papi_events.empty()) { opts.papi_events = papi_events; }
   // clang-format on
 
-  std::cerr << "Configuration:" << "\n    input1:" << opts.input1
-            << "\n    input2=" << opts.input2 << "\n    output=" << opts.output
+  std::cerr << "Configuration:" << "\n    input=" << opts.input
+            << "\n    output=" << opts.output
             << "\n    validation=" << opts.validation
             << "\n    aggregate=" << opts.aggregate
             << "\n    repetitions=" << opts.repetitions
@@ -445,21 +453,12 @@ int main(int argc, char *argv[]) {
                           sizeof(Particle)); // Does not fit in any cache
   size_t alignment = topo->cacheLevels[0].lineSize;
 
-  // Get input1 data
-  if (!opts.input1.empty()) {
-    ReadData(opts.input1, *std::ranges::max_element(problem_sizes),
-             input1_data);
+  // Get input data
+  if (!opts.input.empty()) {
+    ReadData(opts.input, *std::ranges::max_element(problem_sizes),
+             input_data);
   } else {
-    std::cerr << "No input1 file specified. Exiting." << std::endl;
-    return EXIT_FAILURE;
-  }
-
-  // Get input2 data
-  if (!opts.input2.empty()) {
-    ReadData(opts.input2, *std::ranges::max_element(problem_sizes),
-             input2_data);
-  } else {
-    std::cerr << "No input2 file specified. Exiting." << std::endl;
+    std::cerr << "No input data specified. Exiting." << std::endl;
     return EXIT_FAILURE;
   }
 
