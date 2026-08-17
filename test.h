@@ -3,6 +3,11 @@
 // THIS FILE IS GENERATED USING generate_datastructures.py
 #include "utils.h"
 
+template <typename T>
+struct StorageDeleter {
+    void operator()(T* ptr) const { std::free(ptr); }
+};
+
 struct S {
     int x;
     double y;
@@ -42,7 +47,7 @@ struct PartitionedContainerContiguous01_23 {
     std::span<SubS01> p0;
     std::span<SubS23> p1;
 
-    std::byte *storage;
+    std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
 
     static std::string to_string() { return "PartitionedContainerContiguous01_23"; }
@@ -50,7 +55,7 @@ struct PartitionedContainerContiguous01_23 {
     PartitionedContainerContiguous01_23(size_t n, size_t alignment) : n(n) {
         // Allocate each partition
         size_t total_size = 0 + AlignSize(n * sizeof(SubS01), alignment) + AlignSize(n * sizeof(SubS23), alignment);
-        storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
+        storage = std::unique_ptr<std::byte[], StorageDeleter<std::byte>>(static_cast<std::byte*>(std::aligned_alloc(alignment, total_size)), StorageDeleter<std::byte>());
 
         // Assign each partition to its location in the storage vector
         size_t offset = 0;
@@ -69,26 +74,26 @@ struct PartitionedContainerContiguous01_23 {
 
     ~PartitionedContainerContiguous01_23() {
         // Deallocate each partition
-        for (size_t i = n - 1; i == 0; --i) {
+        for (size_t i = n - 1; i != 0; --i) {
               p0[i].~SubS01();
               p1[i].~SubS23();
         }
 
-        std::free(storage);
+
     }
 };
 
 struct PartitionedContainer01_23 {
-    SubS01 *p0;
-    SubS23 *p1;
+    std::unique_ptr<SubS01[], StorageDeleter<SubS01>> p0;
+    std::unique_ptr<SubS23[], StorageDeleter<SubS23>> p1;
 
     size_t n;
 
     static std::string to_string() { return "PartitionedContainer01_23"; }
 
     PartitionedContainer01_23(size_t n, size_t alignment) : n(n) {
-        p0 = static_cast<SubS01*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS01), alignment)));
-        p1 = static_cast<SubS23*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS23), alignment)));
+        p0 = std::unique_ptr<SubS01[], StorageDeleter<SubS01>>(static_cast<SubS01*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS01), alignment))), StorageDeleter<SubS01>());
+        p1 = std::unique_ptr<SubS23[], StorageDeleter<SubS23>>(static_cast<SubS23*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS23), alignment))), StorageDeleter<SubS23>());
     }
 
     inline SRef operator[](const size_t index) const {
@@ -96,12 +101,6 @@ struct PartitionedContainer01_23 {
     }
 
     size_t size() const { return n; }
-
-    ~PartitionedContainer01_23() {
-        // Deallocate each partition
-        std::free(p0);
-        std::free(p1);
-    }
 };
 
 struct PartitionedContainerContiguous0_1_2_3 {
@@ -110,7 +109,7 @@ struct PartitionedContainerContiguous0_1_2_3 {
     std::span<SubS2> p2;
     std::span<SubS3> p3;
 
-    std::byte *storage;
+    std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
 
     static std::string to_string() { return "PartitionedContainerContiguous0_1_2_3"; }
@@ -118,7 +117,7 @@ struct PartitionedContainerContiguous0_1_2_3 {
     PartitionedContainerContiguous0_1_2_3(size_t n, size_t alignment) : n(n) {
         // Allocate each partition
         size_t total_size = 0 + AlignSize(n * sizeof(SubS0), alignment) + AlignSize(n * sizeof(SubS1), alignment) + AlignSize(n * sizeof(SubS2), alignment) + AlignSize(n * sizeof(SubS3), alignment);
-        storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
+        storage = std::unique_ptr<std::byte[], StorageDeleter<std::byte>>(static_cast<std::byte*>(std::aligned_alloc(alignment, total_size)), StorageDeleter<std::byte>());
 
         // Assign each partition to its location in the storage vector
         size_t offset = 0;
@@ -141,32 +140,32 @@ struct PartitionedContainerContiguous0_1_2_3 {
 
     ~PartitionedContainerContiguous0_1_2_3() {
         // Deallocate each partition
-        for (size_t i = n - 1; i == 0; --i) {
+        for (size_t i = n - 1; i != 0; --i) {
               p0[i].~SubS0();
               p1[i].~SubS1();
               p2[i].~SubS2();
               p3[i].~SubS3();
         }
 
-        std::free(storage);
+
     }
 };
 
 struct PartitionedContainer0_1_2_3 {
-    SubS0 *p0;
-    SubS1 *p1;
-    SubS2 *p2;
-    SubS3 *p3;
+    std::unique_ptr<SubS0[], StorageDeleter<SubS0>> p0;
+    std::unique_ptr<SubS1[], StorageDeleter<SubS1>> p1;
+    std::unique_ptr<SubS2[], StorageDeleter<SubS2>> p2;
+    std::unique_ptr<SubS3[], StorageDeleter<SubS3>> p3;
 
     size_t n;
 
     static std::string to_string() { return "PartitionedContainer0_1_2_3"; }
 
     PartitionedContainer0_1_2_3(size_t n, size_t alignment) : n(n) {
-        p0 = static_cast<SubS0*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS0), alignment)));
-        p1 = static_cast<SubS1*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS1), alignment)));
-        p2 = static_cast<SubS2*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS2), alignment)));
-        p3 = static_cast<SubS3*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS3), alignment)));
+        p0 = std::unique_ptr<SubS0[], StorageDeleter<SubS0>>(static_cast<SubS0*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS0), alignment))), StorageDeleter<SubS0>());
+        p1 = std::unique_ptr<SubS1[], StorageDeleter<SubS1>>(static_cast<SubS1*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS1), alignment))), StorageDeleter<SubS1>());
+        p2 = std::unique_ptr<SubS2[], StorageDeleter<SubS2>>(static_cast<SubS2*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS2), alignment))), StorageDeleter<SubS2>());
+        p3 = std::unique_ptr<SubS3[], StorageDeleter<SubS3>>(static_cast<SubS3*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS3), alignment))), StorageDeleter<SubS3>());
     }
 
     inline SRef operator[](const size_t index) const {
@@ -174,14 +173,6 @@ struct PartitionedContainer0_1_2_3 {
     }
 
     size_t size() const { return n; }
-
-    ~PartitionedContainer0_1_2_3() {
-        // Deallocate each partition
-        std::free(p0);
-        std::free(p1);
-        std::free(p2);
-        std::free(p3);
-    }
 };
 
 struct PartitionedContainerContiguous0_1_23 {
@@ -189,7 +180,7 @@ struct PartitionedContainerContiguous0_1_23 {
     std::span<SubS1> p1;
     std::span<SubS23> p2;
 
-    std::byte *storage;
+    std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
 
     static std::string to_string() { return "PartitionedContainerContiguous0_1_23"; }
@@ -197,7 +188,7 @@ struct PartitionedContainerContiguous0_1_23 {
     PartitionedContainerContiguous0_1_23(size_t n, size_t alignment) : n(n) {
         // Allocate each partition
         size_t total_size = 0 + AlignSize(n * sizeof(SubS0), alignment) + AlignSize(n * sizeof(SubS1), alignment) + AlignSize(n * sizeof(SubS23), alignment);
-        storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
+        storage = std::unique_ptr<std::byte[], StorageDeleter<std::byte>>(static_cast<std::byte*>(std::aligned_alloc(alignment, total_size)), StorageDeleter<std::byte>());
 
         // Assign each partition to its location in the storage vector
         size_t offset = 0;
@@ -218,29 +209,29 @@ struct PartitionedContainerContiguous0_1_23 {
 
     ~PartitionedContainerContiguous0_1_23() {
         // Deallocate each partition
-        for (size_t i = n - 1; i == 0; --i) {
+        for (size_t i = n - 1; i != 0; --i) {
               p0[i].~SubS0();
               p1[i].~SubS1();
               p2[i].~SubS23();
         }
 
-        std::free(storage);
+
     }
 };
 
 struct PartitionedContainer0_1_23 {
-    SubS0 *p0;
-    SubS1 *p1;
-    SubS23 *p2;
+    std::unique_ptr<SubS0[], StorageDeleter<SubS0>> p0;
+    std::unique_ptr<SubS1[], StorageDeleter<SubS1>> p1;
+    std::unique_ptr<SubS23[], StorageDeleter<SubS23>> p2;
 
     size_t n;
 
     static std::string to_string() { return "PartitionedContainer0_1_23"; }
 
     PartitionedContainer0_1_23(size_t n, size_t alignment) : n(n) {
-        p0 = static_cast<SubS0*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS0), alignment)));
-        p1 = static_cast<SubS1*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS1), alignment)));
-        p2 = static_cast<SubS23*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS23), alignment)));
+        p0 = std::unique_ptr<SubS0[], StorageDeleter<SubS0>>(static_cast<SubS0*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS0), alignment))), StorageDeleter<SubS0>());
+        p1 = std::unique_ptr<SubS1[], StorageDeleter<SubS1>>(static_cast<SubS1*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS1), alignment))), StorageDeleter<SubS1>());
+        p2 = std::unique_ptr<SubS23[], StorageDeleter<SubS23>>(static_cast<SubS23*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS23), alignment))), StorageDeleter<SubS23>());
     }
 
     inline SRef operator[](const size_t index) const {
@@ -248,13 +239,6 @@ struct PartitionedContainer0_1_23 {
     }
 
     size_t size() const { return n; }
-
-    ~PartitionedContainer0_1_23() {
-        // Deallocate each partition
-        std::free(p0);
-        std::free(p1);
-        std::free(p2);
-    }
 };
 
 #endif // TEST_H

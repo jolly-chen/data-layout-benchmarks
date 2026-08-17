@@ -79,11 +79,12 @@ def deallocate_contiguous_partitions(partition, struct_name_base):
     :param partition: List of partitions, each a list of member indices
     :param struct_name_base: Base name of the struct
     """
-    s = "        for (size_t i = n - 1; i == 0; --i) {\n"
+    s = "        for (size_t i = n - 1; i != 0; --i) {\n"
     for si, subset in enumerate(partition):
         memtype = substructure_string(subset, struct_name_base)
         s += f"              p{si}[i].~{memtype}();\n"
-    s += "        }"
+    s += "        }\n\n"
+    # s += "    std::free(storage);"
     return s
 
 
@@ -96,7 +97,7 @@ def define_partitions_struct(partition, struct_name_base):
     """
     s = ""
     for si, subset in enumerate(partition):
-        s += f"    std::unique_ptr<{substructure_string(subset, struct_name_base)}[]> p{si};\n"
+        s += f"    std::unique_ptr<{substructure_string(subset, struct_name_base)}[], StorageDeleter<{substructure_string(subset, struct_name_base)}>> p{si};\n"
     return s
 
 
@@ -112,7 +113,7 @@ def assign_partitions(partition, struct_name_base):
         memtype = substructure_string(subset, struct_name_base)
         if si != 0:
             s += "\n"
-        s += f"        p{si} = std::unique_ptr<{substructure_string(subset, struct_name_base)}[]>(static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment))));"
+        s += f"        p{si} = std::unique_ptr<{substructure_string(subset, struct_name_base)}[], StorageDeleter<{substructure_string(subset, struct_name_base)}>>(static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment))), StorageDeleter<{substructure_string(subset, struct_name_base)}>());"
     return s
 
 
@@ -233,7 +234,7 @@ def write_contiguous_partition(
         f"""
 struct PartitionedContainerContiguous{partition_string} {{
 { define_contiguous_partitions_struct(partition, struct_name_base) }
-    std::unique_ptr<std::byte[]> storage;
+    std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
 
     static std::string to_string() {{ return "PartitionedContainerContiguous{partition_string}"; }}
@@ -241,7 +242,7 @@ struct PartitionedContainerContiguous{partition_string} {{
     PartitionedContainerContiguous{partition_string}(size_t n, size_t alignment) : n(n) {{
         // Allocate each partition
         size_t total_size = 0 + { " + ".join([ f"AlignSize(n * sizeof({substructure_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
-        storage = std::unique_ptr<std::byte[]>(static_cast<std::byte*>(std::aligned_alloc(alignment, total_size)));
+        storage = std::unique_ptr<std::byte[], StorageDeleter<std::byte>>(static_cast<std::byte*>(std::aligned_alloc(alignment, total_size)), StorageDeleter<std::byte>());
 
         // Assign each partition to its location in the storage vector
 { assign_contiguous_partitions(partition, struct_name_base) }
@@ -420,7 +421,16 @@ def write_partitioned_structs(
         f.write(f"#define DATASTRUCTURES_H\n")
         f.write("// THIS FILE IS GENERATED USING generate_datastructures.py\n")
         f.write('#include "datastructures.h"\n')
-        f.write('#include "utils.h"\n\n')
+        f.write('#include "utils.h"\n')
+
+        f.write(
+"""
+template <typename T>
+struct StorageDeleter {
+    void operator()(T* ptr) const { std::free(ptr); }
+};
+
+""")
 
         write_subsets(f, struct_name_base, members, s_list)
 
@@ -428,6 +438,54 @@ def write_partitioned_structs(
         f.write(f"\n#endif // DATASTRUCTURES_H\n")
 
     write_benchmarks(p_list[start:], struct_name_base, members, contiguous)
+
+
+def write_test_partitions():
+    """
+    Generate test partitioned data structures used in the unit tests in test.cpp and write them to test.h.
+    """
+    struct_name_base = "S"
+    members = [("int", "x"), ("double", "y"), ("float", "z"), ("char", "w")]
+
+    with open("test.h", "w") as f:
+        p_list = [[[0, 1], [2, 3]], [[0], [1], [2], [3]], [[0], [1], [2, 3]]]
+        s_list = []
+
+        for partition in p_list:
+            partition_string = "_".join(
+                ["".join(str(m) for m in subset) for subset in partition]
+            )
+            write_contiguous_partition(
+                f, struct_name_base, partition_string, partition, members
+            )
+            write_partition(f, struct_name_base, partition_string, partition, members)
+
+            for subset in partition:
+                if subset not in s_list:
+                    s_list.append(subset)
+
+    with open("test.h", "r") as f:
+        prev_lines = f.readlines()
+
+    with open("test.h", "w") as f:
+        f.write(f"#ifndef TEST_H\n")
+        f.write(f"#define TEST_H\n")
+        f.write("// THIS FILE IS GENERATED USING generate_datastructures.py\n")
+        f.write('#include "utils.h"\n')
+
+        f.write(
+"""
+template <typename T>
+struct StorageDeleter {
+    void operator()(T* ptr) const { std::free(ptr); }
+};
+
+""")
+
+        write_subsets(f, struct_name_base, members, s_list)
+
+        f.writelines(prev_lines)
+        f.write(f"\n#endif // TEST_H\n")
 
 
 if __name__ == "__main__":
@@ -497,3 +555,5 @@ if __name__ == "__main__":
         args.only,
         args.only_every
     )
+
+    write_test_partitions()
