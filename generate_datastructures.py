@@ -83,8 +83,7 @@ def deallocate_contiguous_partitions(partition, struct_name_base):
     for si, subset in enumerate(partition):
         memtype = substructure_string(subset, struct_name_base)
         s += f"              p{si}[i].~{memtype}();\n"
-    s += "        }\n\n"
-    s += "        std::free(storage);"
+    s += "        }"
     return s
 
 
@@ -97,7 +96,7 @@ def define_partitions_struct(partition, struct_name_base):
     """
     s = ""
     for si, subset in enumerate(partition):
-        s += f"    {substructure_string(subset, struct_name_base)} *p{si};\n"
+        s += f"    std::unique_ptr<{substructure_string(subset, struct_name_base)}[]> p{si};\n"
     return s
 
 
@@ -113,22 +112,7 @@ def assign_partitions(partition, struct_name_base):
         memtype = substructure_string(subset, struct_name_base)
         if si != 0:
             s += "\n"
-        s += f"        p{si} = static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment)));"
-    return s
-
-
-def deallocate_partitions(partition, struct_name_base):
-    """
-    Get the string that deallocates each partition separately.
-
-    :param partition: List of partitions, each a list of member indices
-    :param struct_name_base: Base name of the struct
-    """
-    s = ""
-    for si, subset in enumerate(partition):
-        if si != 0:
-            s += "\n"
-        s += f"        std::free(p{si});"
+        s += f"        p{si} = std::unique_ptr<{substructure_string(subset, struct_name_base)}[]>(static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment))));"
     return s
 
 
@@ -249,7 +233,7 @@ def write_contiguous_partition(
         f"""
 struct PartitionedContainerContiguous{partition_string} {{
 { define_contiguous_partitions_struct(partition, struct_name_base) }
-    std::byte *storage;
+    std::unique_ptr<std::byte[]> storage;
     size_t n;
 
     static std::string to_string() {{ return "PartitionedContainerContiguous{partition_string}"; }}
@@ -257,7 +241,7 @@ struct PartitionedContainerContiguous{partition_string} {{
     PartitionedContainerContiguous{partition_string}(size_t n, size_t alignment) : n(n) {{
         // Allocate each partition
         size_t total_size = 0 + { " + ".join([ f"AlignSize(n * sizeof({substructure_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
-        storage = static_cast<std::byte*>(std::aligned_alloc(alignment, total_size));
+        storage = std::unique_ptr<std::byte[]>(static_cast<std::byte*>(std::aligned_alloc(alignment, total_size)));
 
         // Assign each partition to its location in the storage vector
 { assign_contiguous_partitions(partition, struct_name_base) }
@@ -307,11 +291,6 @@ struct PartitionedContainer{partition_string} {{
     }}
 
     size_t size() const {{ return n; }}
-
-    ~PartitionedContainer{partition_string}() {{
-        // Deallocate each partition
-{ deallocate_partitions(partition, struct_name_base) }
-    }}
 }};
 """
     )
