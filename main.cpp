@@ -30,9 +30,6 @@ size_t papi_nevents = 0;
 using Clock = std::chrono::high_resolution_clock;
 using unit = std::milli;
 
-/* 2^16, maximum number of results to store to cap memory usage. */
-size_t max_results_size = 65536;
-
 // TODO: make Particle generic
 std::vector<std::vector<Particle>> input_data; // Cache for input data
 
@@ -53,7 +50,6 @@ FileOpts opts;
 struct ValidationInfo {
   std::string benchmark_name;
   size_t input_size;
-  size_t max_results_size;
   std::string validation_file;
 };
 std::vector<ValidationInfo> validation_data;
@@ -125,8 +121,6 @@ void ParseValidationInfo(const std::string filename) {
       getline(ss, token, ',');
       info.input_size = std::stoul(token);
       getline(ss, token, ',');
-      info.max_results_size = std::stoul(token);
-      getline(ss, token, ',');
       info.validation_file = token;
 
       validation_data.push_back(info);
@@ -163,8 +157,7 @@ void ValidateResults(const std::string benchmark_name,
     auto validation_file =
         std::ranges::find_if(validation_data, [=](const ValidationInfo &info) {
           return info.benchmark_name == benchmark_name &&
-                 info.input_size == in_size &&
-                 info.max_results_size == max_results_size;
+                 info.input_size == in_size;
         });
 
     if (validation_file != validation_data.end()) {
@@ -250,7 +243,7 @@ void RunBenchmark1(BenchmarkFunc benchmarkfunc, std::string benchmark_name,
     }
 
     // Cap the results size to avoid excessive memory usage.
-    std::vector<double> results(std::min(out_size, max_results_size));
+    std::vector<double> results(out_size);
 
     // Measure time taken by the benchmark function
     PAPI_reset(papi_eventset);
@@ -309,7 +302,7 @@ void RunBenchmark2(BenchmarkFunc benchmarkfunc, std::string benchmark_name,
     }
 
     // Cap the results size to avoid excessive memory usage.
-    std::vector<double> results(std::min(out_size, max_results_size));
+    std::vector<double> results(out_size);
 
     // Measure time taken by the benchmark function.
     PAPI_reset(papi_eventset);

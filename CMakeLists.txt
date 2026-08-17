@@ -4,7 +4,7 @@ project(data_layout_benchmarks)
 
 set(CMAKE_CXX_STANDARD 23)
 
-add_compile_options(-O3 -Wall -Wextra)
+add_compile_options(-O3 -Wall -Wextra -march=native)
 
 # Find LIKWID
 find_package(likwid CONFIG REQUIRED COMPONENTS marker)
@@ -32,7 +32,10 @@ link_libraries(${PAPI_LIBRARIES})
 
 if (vec)
     message(STATUS "Enabling vectorization flags")
-    add_compile_options(-march=native -ftree-vectorize -ffast-math)
+    add_compile_options(-ftree-vectorize -ffast-math -fopt-info-vec-optimized -fopt-info-vec-missed)
+else()
+    message(STATUS "Disabling vectorization flags")
+    add_compile_options(-fno-tree-vectorize -fno-fast-math)
 endif()
 
 add_executable(test test.cpp)

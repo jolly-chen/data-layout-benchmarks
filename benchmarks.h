@@ -81,7 +81,7 @@ inline void InvariantMassSequential(const T &v1, const T &v2,
   const size_t n = v1.size();
 
   for (size_t i = 0; i < n; i++) {
-    results[i % results.size()] = ComputeInvariantMass(v1[i].pt, v1[i].eta, v1[i].phi, v1[i].e,
+    results[i] = ComputeInvariantMass(v1[i].pt, v1[i].eta, v1[i].phi, v1[i].e,
                                       v2[i].pt, v2[i].eta, v2[i].phi, v2[i].e);
   }
 }
@@ -95,7 +95,7 @@ inline void InvariantMassRandom(const T &v1, const T &v2,
 
   for (size_t i = 0; i < n; i++) {
     size_t idx = indices[i];
-    results[i % results.size()] =
+    results[i] =
         ComputeInvariantMass(v1[idx].pt, v1[idx].eta, v1[idx].phi, v1[idx].e,
                              v2[idx].pt, v2[idx].eta, v2[idx].phi, v2[idx].e);
   }
@@ -110,8 +110,7 @@ inline void DeltaR2Pairwise(const T &v, std::span<double> results) {
 
   for (size_t i = 0; i < std::min(deltar2_max_outer_size, n); i++) {
     for (size_t j = i + 1; j < n; j++) {
-      results[idx] = DeltaR2(v[i].eta, v[i].phi, v[j].eta, v[j].phi);
-      idx = (idx + 1) % results.size();
+      results[idx++] = DeltaR2(v[i].eta, v[i].phi, v[j].eta, v[j].phi);
     }
   }
 }

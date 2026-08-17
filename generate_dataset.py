@@ -37,16 +37,15 @@ def generate_dataset(args):
 
 
 def generate_InvariantMassSequential_validation(
-    input1, input2, input_size, max_results_size
+    input1, input2, input_size
 ):
-    out_file = f"{os.path.dirname(input1)}/{Path(input1).stem}_{Path(input2).stem}_{input_size}_{max_results_size}_InvariantMassSequential.validation"
+    out_file = f"{os.path.dirname(input1)}/{Path(input1).stem}_{Path(input2).stem}_{input_size}_InvariantMassSequential.validation"
     print(
         f"Generating InvariantMassSequential validation for {input1} and {input2} in {out_file}"
     )
     with open(input1, "r") as dataset1_file, open(input2, "r") as dataset2_file, open(
         out_file, "w"
     ) as validation_file:
-        # Only the last max_results_size lines are relevant
         lines1 = dataset1_file.readlines()[:input_size]
         lines2 = dataset2_file.readlines()[:input_size]
         pepe_1 = np.array(
@@ -60,16 +59,6 @@ def generate_InvariantMassSequential_validation(
                 ROOT.Math.PtEtaPhiEVector(*map(np.double, line.strip().split(",")))
                 for line in lines2
             ]
-        )
-
-        # Get the index into the pairs indices at which the writing to the results array wraps around due to
-        # the modulo operation on the results index in the benchmark code
-        mod_split_idx = len(pepe_1) % max_results_size
-        pepe_1 = np.concatenate(
-            (pepe_1[-mod_split_idx:], pepe_1[-max_results_size:-mod_split_idx])
-        )
-        pepe_2 = np.concatenate(
-            (pepe_2[-mod_split_idx:], pepe_2[-max_results_size:-mod_split_idx])
         )
 
         px1 = ROOT.RVec["double"]([v.Px() for v in pepe_1])
@@ -88,8 +77,8 @@ def generate_InvariantMassSequential_validation(
             validation_file.write(f"{s}\n")
 
 
-def generate_DeltaR2Pairwise_validation(input1, input_size, max_results_size):
-    out_file = f"{os.path.dirname(input1)}/{Path(input1).stem}_{input_size}_{max_results_size}_DeltaR2Pairwise.validation"
+def generate_DeltaR2Pairwise_validation(input1, input_size):
+    out_file = f"{os.path.dirname(input1)}/{Path(input1).stem}_{input_size}_DeltaR2Pairwise.validation"
     print(f"Generating DeltaR2Pairwise validation for {input1} in {out_file}")
     with open(input1, "r") as dataset1_file, open(out_file, "w") as validation_file:
         lines = np.array(
@@ -100,18 +89,13 @@ def generate_DeltaR2Pairwise_validation(input1, input_size, max_results_size):
         )
 
         max_outer_size = 128
-        results_size = min(max_results_size, round(input_size * (input_size - 1) / 2))
+        results_size = round(input_size * (input_size - 1) / 2)
         indices = [
             (i, j)
             for i in range(min(max_outer_size, input_size))
             for j in range(i + 1, input_size)
         ]
 
-        # Get the index into the pairs indices at which the writing to the results array wraps around due to
-        # the modulo operation on the results index in the benchmark code
-        mod_split_idx = len(indices) % results_size
-
-        indices = indices[-mod_split_idx:] + indices[-max_results_size:-mod_split_idx]
         eta1 = ROOT.RVec["double"]([lines[i][1] for i, _ in indices])
         phi1 = ROOT.RVec["double"]([lines[i][2] for i, _ in indices])
         eta2 = ROOT.RVec["double"]([lines[j][1] for _, j in indices])
@@ -156,14 +140,6 @@ def parse_args(args):
         default=None,
         metavar=("<size>"),
         help="Maximum number of input entries to use (default: all)",
-    )
-    gen_validation.add_argument(
-        "-m",
-        "--max_results_size",
-        type=int,
-        default=int(65536),
-        metavar=("<size>"),
-        help="Maximum size of results (default: 65536)",
     )
     gen_validation.add_argument(
         "-i1", "--input1", type=str, help="First input dataset file", required=True
@@ -211,16 +187,16 @@ if __name__ == "__main__":
         generate_dataset(args)
     elif args.mode == "validation":
         print(
-            f"\tMode: Validation Data Generation\n\t-i1: {args.input1}\n\t-i2: {args.input2}\n\t--input_size: {args.input_size}\n\t--max_results_size: {args.max_results_size}\n\t-b: {args.benchmark}"
+            f"\tMode: Validation Data Generation\n\t-i1: {args.input1}\n\t-i2: {args.input2}\n\t--input_size: {args.input_size}\n\t-b: {args.benchmark}"
         )
         if "DeltaR2Pairwise" in args.benchmark:
             generate_DeltaR2Pairwise_validation(
-                args.input1, args.input_size, args.max_results_size
+                args.input1, args.input_size
             )
         if "InvariantMassSequential" in args.benchmark:
             generate_InvariantMassSequential_validation(
-                args.input1, args.input2, args.input_size, args.max_results_size
+                args.input1, args.input2, args.input_size
             )
         # if "InvariantMassRandom" in args.benchmark:
         #     pass
-        # generate_InvariantMassRandom_validation(args.input1, args.input2, args.max_results_size)
+        # generate_InvariantMassRandom_validation(args.input1, args.input2)
