@@ -37,6 +37,17 @@ ENV PATH=/root/cmake-4.1.1-linux-x86_64/bin:$PATH
 #     && cmake --build build -j $(nproc) \
 #     && cd ..
 
+# Install GCC 16.2.0
+RUN mkdir gcc gcc/build gcc/install \
+    && cd gcc \
+    && git clone --depth 1  --branch releases/gcc-16.2.0 git://gcc.gnu.org/git/gcc.git src \
+    && dnf install -y bzip2 flex diffutils \
+    && cd src && ./contrib/download_prerequisites \
+    && cd ../build \
+    && CXX=g++ CC=gcc ../src/configure --prefix=/root/gcc/install --enable-languages=c,c++ --disable-multilib --enable-checking=release \
+    && make -j $(nproc) \
+    && make install
+
 # install root to run generate_datasets.py
 RUN wget https://github.com/root-project/root/releases/download/v6-38-00/root_v6.38.00.Linux-almalinux10.1-x86_64-gcc14.3.tar.gz \
     && dnf install -y xxhash-devel tbb-devel \
@@ -73,6 +84,17 @@ RUN wget https://github.com/icl-utk-edu/papi/archive/refs/tags/papi-${PAPI_VERSI
     && ./configure \
     && make -j $(nproc) \
     && make install
+
+# Install Google benchmark
+ENV GBENCHMARK_VERSION=1.9.5
+RUN wget https://github.com/google/benchmark/archive/refs/tags/v${GBENCHMARK_VERSION}.tar.gz \
+    && mkdir gbenchmark \
+    && tar -xzf v${GBENCHMARK_VERSION}.tar.gz -C gbenchmark --strip-components=1 \
+    && rm v${GBENCHMARK_VERSION}.tar.gz \
+    && cd gbenchmark \
+    && cmake . -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+               -DBENCHMARK_DOWNLOAD_DEPENDENCIES=on -DBENCHMARK_ENABLE_LIBPFM=on \
+    && make -j $(nproc)
 
 # Download datasets
 RUN wget https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/3m.zip && unzip 3m.zip && rm -f 3m.zip
