@@ -321,34 +321,6 @@ def write_subsets(f, struct_name_base, members, subsets):
         )
 
 
-def write_benchmarks(p_list, struct_name_base, members, contiguous):
-    """
-    Write the benchmark invocations in main.cpp for all generated partitioned containers.
-
-    :param p_list: List of partition strings
-    :param struct_name_base: Base name of the struct
-    :param members: List of tuples (data_type, member_name) containing all members in the original structure
-    :param contiguous: Whether to use contiguous partitioned containers
-    """
-    with open("main.cpp", "r") as f:
-        lines = f.readlines()
-
-    with open("main.cpp", "w") as f:
-        main_start = [i for i, l in enumerate(lines) if "problem_sizes" in l][-1]
-        f.writelines(lines[: main_start + 1])
-
-        f.write(f"    // THIS IS GENERATED USING generate_datastructures.py\n")
-        for p_string in p_list:
-            f.write(
-                f"    RunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{p_string}>(n, alignment);\n"
-            )
-
-        f.write("  }\n\n")
-        f.write("  PAPI_cleanup_eventset(papi_eventset);\n")
-        f.write("  PAPI_destroy_eventset(&papi_eventset);\n")
-        f.write("  return 0;\n}\n// END GENERATED CODE\n")
-
-
 def write_partitioned_structs(
     struct_name_base, members, start, end, contiguous, only=None, only_every=None
 ):
@@ -434,10 +406,10 @@ struct StorageDeleter {
 
         write_subsets(f, struct_name_base, members, s_list)
 
+        f.write("namespace containers {\n")
         f.writelines(prev_lines)
+        f.write("} // namespace containers\n")
         f.write(f"\n#endif // DATASTRUCTURES_H\n")
-
-    write_benchmarks(p_list[start:], struct_name_base, members, contiguous)
 
 
 def write_test_partitions():

@@ -13,6 +13,8 @@
 #include <ios>
 #include <print>
 
+#include <meta>
+
 // TODO: make Particle generic
 std::vector<std::vector<Particle>> input_data; // Cache for input data
 
@@ -243,9 +245,13 @@ int main(int argc, char **argv) {
 
   for (auto &size : problem_sizes) {
     // Register benchmarks for each problem size
-    benchmark::RegisterBenchmark("BM_InvariantMassSequential",
-        BM_InvariantMassSequential<containers::PartitionedContainer0123456>, size)
-        ->Unit(benchmark::kMillisecond);
+    template for (constexpr auto &c : std::define_static_array(members_of(
+                      ^^containers, std::meta::access_context::current()))) {
+      benchmark::RegisterBenchmark("BM_InvariantMassSequential",
+                                   BM_InvariantMassSequential<typename[: c :]>, size)
+          ->Unit(benchmark::kMillisecond)
+          ->Name(std::string("InvariantMassSequential_") + std::string(identifier_of(c)));
+    }
   }
   benchmark::Initialize(&argc, argv);
   // if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
