@@ -237,8 +237,6 @@ struct PartitionedContainerContiguous{partition_string} {{
     std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
 
-    static std::string to_string() {{ return "PartitionedContainerContiguous{partition_string}"; }}
-
     PartitionedContainerContiguous{partition_string}(size_t n, size_t alignment) : n(n) {{
         // Allocate each partition
         size_t total_size = 0 + { " + ".join([ f"AlignSize(n * sizeof({substructure_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
@@ -280,8 +278,6 @@ def write_partition(f, struct_name_base, partition_string, partition, members):
 struct PartitionedContainer{partition_string} {{
 { define_partitions_struct(partition, struct_name_base) }
     size_t n;
-
-    static std::string to_string() {{ return "PartitionedContainer{partition_string}"; }}
 
     PartitionedContainer{partition_string}(size_t n, size_t alignment) : n(n) {{
 { assign_partitions(partition, struct_name_base) }
