@@ -11,7 +11,7 @@ RUN dnf install -y 'dnf-command(config-manager)' \
     && dnf config-manager --set-enabled crb \
     && dnf install -y epel-release \
     && dnf install -y clang gcc g++ eigen3-devel vim wget unzip which htop time libomp-devel \
-    && dnf install -y git openssl-devel
+    && dnf install -y git git-lfs openssl-devel
 
 # install python libraries
 RUN dnf install -y python3-pip \
@@ -64,10 +64,11 @@ RUN wget https://github.com/RRZE-HPC/likwid/archive/refs/tags/v${LIKWID_VERSION}
     && make install
 
 # Install PAPI
-RUN wget https://github.com/icl-utk-edu/papi/archive/refs/tags/papi-7-2-0-t.tar.gz \
+ENV PAPI_VERSION=7-2-0
+RUN wget https://github.com/icl-utk-edu/papi/archive/refs/tags/papi-${PAPI_VERSION}-t.tar.gz \
     && mkdir papi \
-    && tar -xzf papi-7-2-0-t.tar.gz -C papi --strip-components=1 \
-    && rm papi-7-2-0-t.tar.gz \
+    && tar -xzf papi-${PAPI_VERSION}-t.tar.gz -C papi --strip-components=1 \
+    && rm papi-${PAPI_VERSION}-t.tar.gz \
     && cd papi/src \
     && ./configure \
     && make -j $(nproc) \
@@ -78,12 +79,12 @@ RUN wget https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/3m.
 RUN wget https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/3m_v2.zip && unzip 3m_v2.zip && rm -f 3m_v2.zip
 
 # Install the benchmarks repo
-ENV DLB_VERSION=b52fd8a
+ENV DLB_VERSION=556067d
 RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git \
     && cd data-layout-benchmarks \
     && git checkout ${DLB_VERSION} \
     && cmake . -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc \
-    && cd .. && mv 3m /root/data-layout-benchmarks/3m
+    && cd .. && mv 3m /root/data-layout-benchmarks/3m && mv 3m_v2 /root/data-layout-benchmarks/3m_v2
 
 ENV PATH="$PATH:/root/cmake-4.1.1-linux-x86_64/bin:/usr/local/likwid/bin"
 ENV LD_LIBRARY_PATH="/root/clang-p2996/build/lib/x86_64-unknown-linux-gnu"
