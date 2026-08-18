@@ -1,7 +1,6 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include "benchmarks.h"
 #include <chrono>
 #include <iostream>
 #include <type_traits>
@@ -11,6 +10,17 @@
 inline size_t AlignSize(size_t size, size_t alignment) {
   return (size + alignment - 1) / alignment * alignment;
 }
+
+struct FileOpts {
+  std::string input = "";      // Option "--input <string>"
+  std::string validation = ""; // Option "--validation <string>"
+};
+
+struct ValidationInfo {
+  std::string benchmark_name;
+  size_t input_size;
+  std::string validation_file;
+};
 
 // https://stackoverflow.com/questions/865668/parsing-command-line-arguments-in-c
 class CmdLineParser {
@@ -37,6 +47,7 @@ private:
   std::vector<std::string> tokens;
 };
 
+
 /* Convert a time unit type to its string representation. */
 template <typename Unit> std::string unit_to_string() {
   if constexpr (std::same_as<Unit, std::nano>) {
@@ -51,5 +62,6 @@ template <typename Unit> std::string unit_to_string() {
     return "unknown_unit";
   }
 }
+
 
 #endif // UTILS_H

@@ -340,12 +340,12 @@ def write_benchmarks(p_list, struct_name_base, members, contiguous):
         f.write(f"    // THIS IS GENERATED USING generate_datastructures.py\n")
         for p_string in p_list:
             f.write(
-                f"    RunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{p_string}>(n, alignment);\n"
+                f"    RunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{p_string}>(size);\n"
             )
 
         f.write("  }\n\n")
-        f.write("  PAPI_cleanup_eventset(papi_eventset);\n")
-        f.write("  PAPI_destroy_eventset(&papi_eventset);\n")
+        f.write("  benchmark::RunSpecifiedBenchmarks();\n")
+        f.write("  benchmark::Shutdown();\n")
         f.write("  return 0;\n}\n// END GENERATED CODE\n")
 
 
