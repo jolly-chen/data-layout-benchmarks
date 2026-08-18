@@ -10,7 +10,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <ios>
 #include <print>
 
 #include <meta>
@@ -209,6 +208,43 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n) {
   state.counters["reference_size"] = sizeof(v1[0]);
 }
 
+
+template <class Container>
+void BM_InvariantMassRandom(benchmark::State &state, size_t n) {
+  Container v1(n, Alignment), v2(n, Alignment);
+  for (size_t i = 0; i < n; ++i) {
+    v1[i].pt = input_data[0][i].pt;
+    v1[i].eta = input_data[0][i].eta;
+    v1[i].phi = input_data[0][i].phi;
+    v1[i].e = input_data[0][i].e;
+    v2[i].pt = input_data[1][i].pt;
+    v2[i].eta = input_data[1][i].eta;
+    v2[i].phi = input_data[1][i].phi;
+    v2[i].e = input_data[1][i].e;
+  }
+  std::vector<double> results(n);
+
+  std::vector<size_t> indices(n);
+  std::iota(begin(indices), end(indices), 0);
+  std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());
+  std::shuffle(begin(indices), end(indices), rng);
+
+  for (auto _ : state) {
+    kernels::InvariantMassRandom(v1, v2, results, indices);
+    benchmark::DoNotOptimize(results);
+    benchmark::ClobberMemory();
+  }
+
+  if (!opts.validation.empty()) {
+    ValidateResults("InvariantMassRandom", results, n);
+    benchmark::DoNotOptimize(results);
+    benchmark::ClobberMemory();
+  }
+
+  state.counters["problem_size"] = n;
+  state.counters["reference_size"] = sizeof(v1[0]);
+}
+
 int main(int argc, char **argv) {
   benchmark::MaybeReenterWithoutASLR(argc, argv);
   ParseOptions(argc, argv);
@@ -241,6 +277,8 @@ int main(int argc, char **argv) {
     ParseValidationInfo(opts.validation);
   }
 
+  benchmark::Initialize(&argc, argv);
+  // if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
   //////////////////////////////////////////////////////////////////////////
 
   for (auto &size : problem_sizes) {
@@ -248,13 +286,22 @@ int main(int argc, char **argv) {
     template for (constexpr auto &c : std::define_static_array(members_of(
                       ^^containers, std::meta::access_context::current()))) {
       benchmark::RegisterBenchmark("BM_InvariantMassSequential",
-                                   BM_InvariantMassSequential<typename[: c :]>, size)
+                                   BM_InvariantMassSequential<typename[: c
+                                   :]>, size)
           ->Unit(benchmark::kMillisecond)
-          ->Name(std::string("InvariantMassSequential_") + std::string(identifier_of(c)));
+          ->Name(std::string("InvariantMassSequential_") +
+          std::string(identifier_of(c)));
+
+      benchmark::RegisterBenchmark("BM_InvariantMassRandom",
+                                  BM_InvariantMassRandom<typename[:c:]>, size)
+          ->Unit(benchmark::kMillisecond)
+          ->Name(std::string("InvariantMassRandom_") +
+                std::string(identifier_of(c)));
     }
   }
-  benchmark::Initialize(&argc, argv);
-  // if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
+
+  //////////////////////////////////////////////////////////////////////////
+
   benchmark::RunSpecifiedBenchmarks();
   benchmark::Shutdown();
 }
