@@ -30,9 +30,11 @@ size_t Alignment = 64; // Default alignment, will be set based on CPU topology
 void ReadData(std::string filename, size_t n,
               std::vector<std::vector<Particle>> &input_data) {
   std::ifstream i_stream(filename);
+  std::vector<std::string> ifile_names;
   if (i_stream.is_open()) {
     size_t file_num = 0;
     for (std::string input_file; getline(i_stream, input_file);) {
+      ifile_names.push_back(input_file);
       input_data.push_back(std::vector<Particle>(n));
 
       std::ifstream ii_stream(input_file);
@@ -71,7 +73,9 @@ void ReadData(std::string filename, size_t n,
                              " for reading");
   }
 
-  input_data.resize(n);
+  benchmark::AddCustomContext(
+      "input", std::ranges::to<std::string>(
+                   std::views::join_with(ifile_names, std::string_view(", "))));
 }
 
 /* Parse validation info from the given CSV file. */
@@ -98,6 +102,13 @@ void ParseValidationInfo(const std::string filename) {
     throw std::runtime_error("Failed to open validation file " + filename +
                              " for reading");
   }
+
+  benchmark::AddCustomContext(
+      "validation",
+      validation_data |
+          std::views::transform(&ValidationInfo::validation_file) |
+          std::views::join_with(std::string_view(", ")) |
+          std::ranges::to<std::string>());
 }
 
 /* Read validation data from the given file into the container. */
@@ -174,9 +185,6 @@ void ParseOptions(int &argc, char **argv) {
   auto validation = cmdLineParser.GetCmdOption("--validation");
   if (!validation.empty()) { opts.validation = validation; }
   // clang-format on
-
-  benchmark::AddCustomContext("input", opts.input);
-  benchmark::AddCustomContext("validation", opts.validation);
 }
 
 template <class Container>
@@ -207,7 +215,6 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n) {
   state.counters["problem_size"] = n;
   state.counters["reference_size"] = sizeof(v1[0]);
 }
-
 
 template <class Container>
 void BM_InvariantMassRandom(benchmark::State &state, size_t n) {
@@ -286,17 +293,17 @@ int main(int argc, char **argv) {
     template for (constexpr auto &c : std::define_static_array(members_of(
                       ^^containers, std::meta::access_context::current()))) {
       benchmark::RegisterBenchmark("BM_InvariantMassSequential",
-                                   BM_InvariantMassSequential<typename[: c
-                                   :]>, size)
+                                   BM_InvariantMassSequential<typename[:c:]>,
+                                   size)
           ->Unit(benchmark::kMillisecond)
           ->Name(std::string("InvariantMassSequential_") +
-          std::string(identifier_of(c)));
+                 std::string(identifier_of(c)));
 
       benchmark::RegisterBenchmark("BM_InvariantMassRandom",
-                                  BM_InvariantMassRandom<typename[:c:]>, size)
+                                   BM_InvariantMassRandom<typename[:c:]>, size)
           ->Unit(benchmark::kMillisecond)
           ->Name(std::string("InvariantMassRandom_") +
-                std::string(identifier_of(c)));
+                 std::string(identifier_of(c)));
     }
   }
 
