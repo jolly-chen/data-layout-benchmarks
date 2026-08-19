@@ -278,6 +278,8 @@ def write_partition(f, struct_name_base, partition_string, partition, members):
 struct PartitionedContainer{partition_string} {{
 { define_partitions_struct(partition, struct_name_base) }
     size_t n;
+    
+    static const size_t bytes_for_one = 0 + { " + ".join([ f"sizeof({substructure_string(subset, struct_name_base)})" for subset in partition ]) };
 
     PartitionedContainer{partition_string}(size_t n, size_t alignment) : n(n) {{
 { assign_partitions(partition, struct_name_base) }

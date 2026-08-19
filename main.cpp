@@ -180,7 +180,7 @@ void ParseOptions(int &argc, char **argv) {
 }
 
 template <class Container>
-void BM_InvariantMassSequential(benchmark::State &state, size_t n) {
+void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor) {
   Container v1(n, Alignment), v2(n, Alignment);
   for (size_t i = 0; i < n; ++i) {
     v1[i].pt = input_data[0][i].pt;
@@ -205,44 +205,8 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n) {
   }
 
   state.counters["problem_size"] = n;
-  state.counters["reference_size"] = sizeof(v1[0]);
-}
-
-
-template <class Container>
-void BM_InvariantMassRandom(benchmark::State &state, size_t n) {
-  Container v1(n, Alignment), v2(n, Alignment);
-  for (size_t i = 0; i < n; ++i) {
-    v1[i].pt = input_data[0][i].pt;
-    v1[i].eta = input_data[0][i].eta;
-    v1[i].phi = input_data[0][i].phi;
-    v1[i].e = input_data[0][i].e;
-    v2[i].pt = input_data[1][i].pt;
-    v2[i].eta = input_data[1][i].eta;
-    v2[i].phi = input_data[1][i].phi;
-    v2[i].e = input_data[1][i].e;
-  }
-  std::vector<double> results(n);
-
-  std::vector<size_t> indices(n);
-  std::iota(begin(indices), end(indices), 0);
-  std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());
-  std::shuffle(begin(indices), end(indices), rng);
-
-  for (auto _ : state) {
-    kernels::InvariantMassRandom(v1, v2, results, indices);
-    benchmark::DoNotOptimize(results);
-    benchmark::ClobberMemory();
-  }
-
-  if (!opts.validation.empty()) {
-    ValidateResults("InvariantMassRandom", results, n);
-    benchmark::DoNotOptimize(results);
-    benchmark::ClobberMemory();
-  }
-
-  state.counters["problem_size"] = n;
-  state.counters["reference_size"] = sizeof(v1[0]);
+  state.counters["factor"] = factor;
+  state.counters["bytes_for_one"] = Container::bytes_for_one;
 }
 
 int main(int argc, char **argv) {
@@ -257,16 +221,15 @@ int main(int argc, char **argv) {
   }
   CpuTopology_t topo = get_cpuTopology();
 
-  std::vector<size_t> problem_sizes;
-  problem_sizes.push_back(topo->cacheLevels[0].size / sizeof(Particle) /
-                          3); // Fits in L1 Cache
-  problem_sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size /
-                          sizeof(Particle) / 2); // Does not fit in any cache
+  // problem_sizes.push_back(topo->cacheLevels[0].size / sizeof(Particle) /
+  //                         3); // Fits in L1 Cache
+  // problem_sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size /
+  //                         sizeof(Particle) / 2); // Does not fit in any cache
   Alignment = topo->cacheLevels[0].lineSize;
 
   // Get input data
   if (!opts.input.empty()) {
-    ReadData(opts.input, *std::ranges::max_element(problem_sizes), input_data);
+    ReadData(opts.input, 3e6, input_data);
   } else {
     std::cerr << "No input data specified. Exiting." << std::endl;
     return EXIT_FAILURE;
@@ -281,22 +244,23 @@ int main(int argc, char **argv) {
   // if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
   //////////////////////////////////////////////////////////////////////////
 
-  for (auto &size : problem_sizes) {
-    // Register benchmarks for each problem size
-    template for (constexpr auto &c : std::define_static_array(members_of(
-                      ^^containers, std::meta::access_context::current()))) {
+  const auto factors = std::vector<double>{0.25, 0.5, 0.9, 1, 1.1, 1.25, 2, 4};
+  // Register benchmarks for each problem size
+  template for (constexpr auto &c : std::define_static_array(members_of(
+    ^^containers, std::meta::access_context::current()))) {
+    std::vector<size_t> problem_sizes;
+    for (const auto &factor : factors) {
+      problem_sizes.push_back(static_cast<size_t>(
+        factor * topo->cacheLevels[topo->numCacheLevels - 1].size / [: c :]::bytes_for_one));
+    }
+
+    for (auto const [factor, size] : std::views::zip(factors, problem_sizes)) {
       benchmark::RegisterBenchmark("BM_InvariantMassSequential",
                                    BM_InvariantMassSequential<typename[: c
-                                   :]>, size)
+                                   :]>, size, factor)
           ->Unit(benchmark::kMillisecond)
           ->Name(std::string("InvariantMassSequential_") +
           std::string(identifier_of(c)));
-
-      benchmark::RegisterBenchmark("BM_InvariantMassRandom",
-                                  BM_InvariantMassRandom<typename[:c:]>, size)
-          ->Unit(benchmark::kMillisecond)
-          ->Name(std::string("InvariantMassRandom_") +
-                std::string(identifier_of(c)));
     }
   }
 

@@ -5,8 +5,8 @@ project(data_layout_benchmarks)
 set(CMAKE_CXX_STANDARD 26)
 
 add_compile_options(-O3 -Wall -Wextra -march=native -freflection)
-add_compile_options(-fsanitize=undefined  -fno-omit-frame-pointer)
-add_link_options(-fsanitize=undefined)
+# add_compile_options(-fsanitize=undefined,address  -fno-omit-frame-pointer)
+# add_link_options(-fsanitize=undefined,address)
 
 # Find LIKWID
 find_package(likwid CONFIG REQUIRED COMPONENTS marker)
@@ -42,6 +42,7 @@ endif()
 
 add_executable(test test.cpp)
 
-find_package(benchmark)
+find_package(PFM)
+find_package(benchmark REQUIRED CONFIG)
 add_executable(main main.cpp)
 target_link_libraries(main PUBLIC benchmark::benchmark)

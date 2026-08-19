@@ -6,6 +6,11 @@
 #include <type_traits>
 #include <vector>
 #include <ranges>
+#include <meta>
+
+consteval auto nsdms(std::meta::info r) {
+  return std::meta::nonstatic_data_members_of(r, std::meta::access_context::current());
+}
 
 inline size_t AlignSize(size_t size, size_t alignment) {
   return (size + alignment - 1) / alignment * alignment;
