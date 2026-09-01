@@ -251,32 +251,22 @@ int main(int argc, char **argv) {
 
   const auto factors = std::vector<double>{0.25, 0.5, 0.9, 1, 1.1, 1.25, 2, 4};
   // Register benchmarks for each problem size
-  template for (constexpr auto &c : std::define_static_array(members_of(
-    ^^containers, std::meta::access_context::current()))) {
-    std::vector<size_t> problem_sizes;
-    for (const auto &factor : factors) {
-    problem_sizes.push_back(static_cast<size_t>(
-      factor * topo->cacheLevels[0].size / [: c :]::bytes_for_one));
-    }
 
-    for (const auto &factor : factors) {
-      problem_sizes.push_back(static_cast<size_t>(
-        factor * topo->cacheLevels[1].size / [: c :]::bytes_for_one));
+  for (const auto &lvl : std::views::iota(size_t{0}, topo->numCacheLevels)) {
+    template for (constexpr auto &c : std::define_static_array(members_of(
+      ^^containers, std::meta::access_context::current()))) {
+      std::vector<size_t> problem_sizes;
+      for (const auto &factor : factors) {
+        problem_sizes.push_back(static_cast<size_t>(factor * topo->cacheLevels[lvl].size / [: c :]::bytes_for_one));
       }
 
-    for (const auto &factor : factors) {
-      problem_sizes.push_back(static_cast<size_t>(
-        factor * topo->cacheLevels[2].size / [: c :]::bytes_for_one));
-    }
-
-    std::vector<size_t> cache_levels { 0, 0, 0, 1, 1, 1, 2, 2, 2 };
-    for (auto const [factor, size, lvl] : std::views::zip(factors, problem_sizes, cache_levels)) {
-      benchmark::RegisterBenchmark("BM_InvariantMassSequential",
-                                   BM_InvariantMassSequential<typename[: c
-                                   :]>, size, factor, lvl)
-          ->Unit(benchmark::kMillisecond)
-          ->Name(std::string("InvariantMassSequential_") +
-          std::string(identifier_of(c)));
+      for (auto const [factor, size] : std::views::zip(factors, problem_sizes)) {
+        benchmark::RegisterBenchmark("BM_InvariantMassSequential",
+                                     BM_InvariantMassSequential<typename[: c :]>, size, factor, lvl)
+            ->Unit(benchmark::kMillisecond)
+            ->Name(std::string("InvariantMassSequential_") +
+            std::string(identifier_of(c)));
+      }
     }
   }
 
