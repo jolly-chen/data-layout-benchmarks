@@ -30,9 +30,11 @@ size_t Alignment = 64; // Default alignment, will be set based on CPU topology
 void ReadData(std::string filename, size_t n,
               std::vector<std::vector<Particle>> &input_data) {
   std::ifstream i_stream(filename);
+  std::vector<std::string> ifile_names;
   if (i_stream.is_open()) {
     size_t file_num = 0;
     for (std::string input_file; getline(i_stream, input_file);) {
+      ifile_names.push_back(input_file);
       input_data.push_back(std::vector<Particle>(n));
 
       std::ifstream ii_stream(input_file);
@@ -71,7 +73,9 @@ void ReadData(std::string filename, size_t n,
                              " for reading");
   }
 
-  input_data.resize(n);
+  benchmark::AddCustomContext(
+      "input", std::ranges::to<std::string>(
+                   std::views::join_with(ifile_names, std::string_view(", "))));
 }
 
 /* Parse validation info from the given CSV file. */
@@ -98,6 +102,13 @@ void ParseValidationInfo(const std::string filename) {
     throw std::runtime_error("Failed to open validation file " + filename +
                              " for reading");
   }
+
+  benchmark::AddCustomContext(
+      "validation",
+      validation_data |
+          std::views::transform(&ValidationInfo::validation_file) |
+          std::views::join_with(std::string_view(", ")) |
+          std::ranges::to<std::string>());
 }
 
 /* Read validation data from the given file into the container. */
@@ -174,13 +185,10 @@ void ParseOptions(int &argc, char **argv) {
   auto validation = cmdLineParser.GetCmdOption("--validation");
   if (!validation.empty()) { opts.validation = validation; }
   // clang-format on
-
-  benchmark::AddCustomContext("input", opts.input);
-  benchmark::AddCustomContext("validation", opts.validation);
 }
 
 template <class Container>
-void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor) {
+void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor, int cache_level) {
   Container v1(n, Alignment), v2(n, Alignment);
   for (size_t i = 0; i < n; ++i) {
     v1[i].pt = input_data[0][i].pt;
@@ -206,7 +214,9 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor
 
   state.counters["problem_size"] = n;
   state.counters["factor"] = factor;
+  state.counters["cache_level"] = cache_level;
   state.counters["bytes_for_one"] = Container::bytes_for_one;
+  state.counters["bytes_for_all"] = v1.bytes_for_all;
 }
 
 int main(int argc, char **argv) {
@@ -220,16 +230,11 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
   CpuTopology_t topo = get_cpuTopology();
-
-  // problem_sizes.push_back(topo->cacheLevels[0].size / sizeof(Particle) /
-  //                         3); // Fits in L1 Cache
-  // problem_sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size /
-  //                         sizeof(Particle) / 2); // Does not fit in any cache
   Alignment = topo->cacheLevels[0].lineSize;
 
   // Get input data
   if (!opts.input.empty()) {
-    ReadData(opts.input, 3e6, input_data);
+    ReadData(opts.input, 6e6, input_data);
   } else {
     std::cerr << "No input data specified. Exiting." << std::endl;
     return EXIT_FAILURE;
@@ -250,14 +255,25 @@ int main(int argc, char **argv) {
     ^^containers, std::meta::access_context::current()))) {
     std::vector<size_t> problem_sizes;
     for (const auto &factor : factors) {
-      problem_sizes.push_back(static_cast<size_t>(
-        factor * topo->cacheLevels[topo->numCacheLevels - 1].size / [: c :]::bytes_for_one));
+    problem_sizes.push_back(static_cast<size_t>(
+      factor * topo->cacheLevels[0].size / [: c :]::bytes_for_one));
     }
 
-    for (auto const [factor, size] : std::views::zip(factors, problem_sizes)) {
+    for (const auto &factor : factors) {
+      problem_sizes.push_back(static_cast<size_t>(
+        factor * topo->cacheLevels[1].size / [: c :]::bytes_for_one));
+      }
+
+    for (const auto &factor : factors) {
+      problem_sizes.push_back(static_cast<size_t>(
+        factor * topo->cacheLevels[2].size / [: c :]::bytes_for_one));
+    }
+
+    std::vector<size_t> cache_levels { 0, 0, 0, 1, 1, 1, 2, 2, 2 };
+    for (auto const [factor, size, lvl] : std::views::zip(factors, problem_sizes, cache_levels)) {
       benchmark::RegisterBenchmark("BM_InvariantMassSequential",
                                    BM_InvariantMassSequential<typename[: c
-                                   :]>, size, factor)
+                                   :]>, size, factor, lvl)
           ->Unit(benchmark::kMillisecond)
           ->Name(std::string("InvariantMassSequential_") +
           std::string(identifier_of(c)));

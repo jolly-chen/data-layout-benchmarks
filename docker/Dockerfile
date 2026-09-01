@@ -74,6 +74,17 @@ RUN wget https://github.com/icl-utk-edu/papi/archive/refs/tags/papi-${PAPI_VERSI
     && make -j $(nproc) \
     && make install
 
+# Install Google benchmark
+ENV GBENCHMARK_VERSION=1.9.5
+RUN wget https://github.com/google/benchmark/archive/refs/tags/v${GBENCHMARK_VERSION}.tar.gz \
+    && mkdir gbenchmark \
+    && tar -xzf v${GBENCHMARK_VERSION}.tar.gz -C gbenchmark --strip-components=1 \
+    && rm v${GBENCHMARK_VERSION}.tar.gz \
+    && cd gbenchmark \
+    && cmake . -DCMAKE_CXX_COMPILER=/root/gcc/install/bin/g++ -DCMAKE_C_COMPILER=/root/gcc/install/bin/gcc -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+               -DBENCHMARK_DOWNLOAD_DEPENDENCIES=on -DBENCHMARK_ENABLE_LIBPFM=on  \
+    && make -j $(nproc)
+
 # Download datasets
 RUN wget https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/3m.zip && unzip 3m.zip && rm -f 3m.zip
 RUN wget https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/3m_v2.zip && unzip 3m_v2.zip && rm -f 3m_v2.zip
@@ -83,7 +94,7 @@ ENV DLB_VERSION=556067d
 RUN git clone https://github.com/jolly-chen/data-layout-benchmarks.git \
     && cd data-layout-benchmarks \
     && git checkout ${DLB_VERSION} \
-    && cmake . -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc \
+    && cmake . -DCMAKE_CXX_COMPILER=/root/gcc/install/bin/g++ -DCMAKE_C_COMPILER=/root/gcc/install/bin/gcc \
     && cd .. && mv 3m /root/data-layout-benchmarks/3m && mv 3m_v2 /root/data-layout-benchmarks/3m_v2
 
 ENV PATH="$PATH:/root/cmake-4.1.1-linux-x86_64/bin:/usr/local/likwid/bin"

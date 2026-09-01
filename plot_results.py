@@ -966,23 +966,23 @@ if __name__ == "__main__":
             "_".join([str(p) for p in perm]) for perm in permutations(range(n_members))
         ]
 
-        plot_scatter(input, df, args.output, args.aggregate, ["time"])
-        plot_scatter(input, df, args.output, args.aggregate, ["PAPI_TOT_INS", "time"], outside_legend=True)
+        # plot_scatter(input, df, args.output, args.aggregate, ["time"])
+        # plot_scatter(input, df, args.output, args.aggregate, ["PAPI_TOT_INS", "time"], outside_legend=True)
 
-        if "ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR" in df.columns:
-            plot_scatter(input, df, args.output, args.aggregate,
-                        ["ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR"],
-                        sort_by="time", outside_legend=True)
+        # if "ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR" in df.columns:
+        #     plot_scatter(input, df, args.output, args.aggregate,
+        #                 ["ANY_DATA_CACHE_FILLS_FROM_SYSTEM:LCL_L2:LOCAL_CCX:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR"],
+        #                 sort_by="time", outside_legend=True)
 
     ########
     for _ in range(len(args.input)):
         plot_runtime_histogram_all_minmax(args.input, [ pd.read_csv(input) for input in args.input ], args.output, args.aggregate)
         args.input = np.roll(args.input, -1)
 
-    plot_runtime_histogram_max_psize_all_archs(
-        args.input,
-        dfs,
-        args.output,
-        args.aggregate,
-        annotate="guidelines",
-    )
+    # plot_runtime_histogram_max_psize_all_archs(
+    #     args.input,
+    #     dfs,
+    #     args.output,
+    #     args.aggregate,
+    #     annotate="guidelines",
+    # )

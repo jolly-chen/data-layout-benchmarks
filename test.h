@@ -50,8 +50,6 @@ struct PartitionedContainerContiguous01_23 {
     std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
 
-    static std::string to_string() { return "PartitionedContainerContiguous01_23"; }
-
     PartitionedContainerContiguous01_23(size_t n, size_t alignment) : n(n) {
         // Allocate each partition
         size_t total_size = 0 + AlignSize(n * sizeof(SubS01), alignment) + AlignSize(n * sizeof(SubS23), alignment);
@@ -89,8 +87,6 @@ struct PartitionedContainer01_23 {
 
     size_t n;
 
-    static std::string to_string() { return "PartitionedContainer01_23"; }
-
     PartitionedContainer01_23(size_t n, size_t alignment) : n(n) {
         p0 = std::unique_ptr<SubS01[], StorageDeleter<SubS01>>(static_cast<SubS01*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS01), alignment))), StorageDeleter<SubS01>());
         p1 = std::unique_ptr<SubS23[], StorageDeleter<SubS23>>(static_cast<SubS23*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS23), alignment))), StorageDeleter<SubS23>());
@@ -111,8 +107,6 @@ struct PartitionedContainerContiguous0_1_2_3 {
 
     std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
-
-    static std::string to_string() { return "PartitionedContainerContiguous0_1_2_3"; }
 
     PartitionedContainerContiguous0_1_2_3(size_t n, size_t alignment) : n(n) {
         // Allocate each partition
@@ -159,8 +153,6 @@ struct PartitionedContainer0_1_2_3 {
 
     size_t n;
 
-    static std::string to_string() { return "PartitionedContainer0_1_2_3"; }
-
     PartitionedContainer0_1_2_3(size_t n, size_t alignment) : n(n) {
         p0 = std::unique_ptr<SubS0[], StorageDeleter<SubS0>>(static_cast<SubS0*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS0), alignment))), StorageDeleter<SubS0>());
         p1 = std::unique_ptr<SubS1[], StorageDeleter<SubS1>>(static_cast<SubS1*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS1), alignment))), StorageDeleter<SubS1>());
@@ -182,8 +174,6 @@ struct PartitionedContainerContiguous0_1_23 {
 
     std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
-
-    static std::string to_string() { return "PartitionedContainerContiguous0_1_23"; }
 
     PartitionedContainerContiguous0_1_23(size_t n, size_t alignment) : n(n) {
         // Allocate each partition
@@ -225,8 +215,6 @@ struct PartitionedContainer0_1_23 {
     std::unique_ptr<SubS23[], StorageDeleter<SubS23>> p2;
 
     size_t n;
-
-    static std::string to_string() { return "PartitionedContainer0_1_23"; }
 
     PartitionedContainer0_1_23(size_t n, size_t alignment) : n(n) {
         p0 = std::unique_ptr<SubS0[], StorageDeleter<SubS0>>(static_cast<SubS0*>(std::aligned_alloc(alignment, AlignSize(n * sizeof(SubS0), alignment))), StorageDeleter<SubS0>());
