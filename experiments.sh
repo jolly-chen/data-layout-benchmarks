@@ -16,7 +16,7 @@ out_file="${datetime}.out"
 #     240531_6 42301_56 04213_56 13024_65 053421_6 321450_6 02341_56 250431_6 324501_6 23140_65  3645201 02_53641 106_23_54 6430_15_2 3016_425 0_1_62_453 531402_6 10_6235_4 23405_61 503126_4 \
 #     0123456 0_1_2_3_4_5_6
 
-python3 generate_datastructures.py --data_spec particle.spec
+python3 generate_datastructures.py --data_spec particle_used.spec
 
 /usr/bin/time -v make main &> "${log_file}"
 likwid-pin -C 0 ./main --input input_files --benchmark_enable_random_interleaving --benchmark_repetitions=10 \
