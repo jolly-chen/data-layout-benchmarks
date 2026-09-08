@@ -25,25 +25,52 @@ struct ValidationInfo {
 // https://stackoverflow.com/questions/865668/parsing-command-line-arguments-in-c
 class CmdLineParser {
 public:
-  CmdLineParser(int &argc, char **argv) {
+  CmdLineParser(int &argc, char **argv)
+      : argc(argc), argv(argv), consumed(argc, false) {
     for (int i = 1; i < argc; ++i)
       this->tokens.push_back(std::string(argv[i]));
   }
-  const std::string &GetCmdOption(const std::string &option) const {
-    std::vector<std::string>::const_iterator itr;
-    itr = std::ranges::find(this->tokens, option);
-    if (itr != this->tokens.end() && ++itr != this->tokens.end()) {
-      return *itr;
+  /* Look up an option and its value, marking both as consumed. */
+  const std::string &GetCmdOption(const std::string &option) {
+    auto itr = std::ranges::find(this->tokens, option);
+    if (itr != this->tokens.end()) {
+      MarkConsumed(itr);
+      if (++itr != this->tokens.end()) {
+        MarkConsumed(itr);
+        return *itr;
+      }
     }
     static const std::string empty_string("");
     return empty_string;
   }
   /// @author iain
-  bool CmdOptionExists(const std::string &option) const {
-    return std::ranges::find(this->tokens, option) != this->tokens.end();
+  bool CmdOptionExists(const std::string &option) {
+    auto itr = std::ranges::find(this->tokens, option);
+    if (itr == this->tokens.end()) { return false; }
+    MarkConsumed(itr);
+    return true;
+  }
+  /* Drop every argument this parser consumed from argc/argv, so the remaining
+     ones can be handed to another parser (e.g. google benchmark). */
+  void RemoveParsedOptions() {
+    int out = 1;
+    for (int i = 1; i < argc; ++i) {
+      if (!consumed[i]) { argv[out++] = argv[i]; }
+    }
+    for (int i = out; i < argc; ++i)
+      argv[i] = nullptr;
+    argc = out;
   }
 
 private:
+  void MarkConsumed(std::vector<std::string>::const_iterator itr) {
+    // tokens[i] corresponds to argv[i + 1]
+    consumed[std::distance(this->tokens.cbegin(), itr) + 1] = true;
+  }
+
+  int &argc;
+  char **argv;
+  std::vector<bool> consumed;
   std::vector<std::string> tokens;
 };
 

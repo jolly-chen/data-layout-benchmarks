@@ -174,6 +174,9 @@ void ParseOptions(int &argc, char **argv) {
   if (!validation.empty()) { opts.validation = validation; }
   // clang-format on
 
+  // Strip our own options so they are not seen by google benchmark's parser.
+  cmdLineParser.RemoveParsedOptions();
+
   benchmark::AddCustomContext("input", opts.input);
   benchmark::AddCustomContext("validation", opts.validation);
 }
@@ -286,7 +289,9 @@ int main(int argc, char **argv) {
   if (!opts.validation.empty()) {
     ParseValidationInfo(opts.validation);
   }
-
+  
+  benchmark::Initialize(&argc, argv);
+  if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
   //////////////////////////////////////////////////////////////////////////
 
   for (auto &size : problem_sizes) {
