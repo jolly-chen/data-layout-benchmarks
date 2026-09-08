@@ -231,6 +231,9 @@ void ParseOptions(int &argc, char **argv) {
   auto validation = cmdLineParser.GetCmdOption("--validation");
   if (!validation.empty()) { opts.validation = validation; }
   // clang-format on
+
+  // Strip our own options so they are not seen by google benchmark's parser.
+  cmdLineParser.RemoveParsedOptions();
 }
 
 template <class Container>
@@ -314,7 +317,7 @@ int main(int argc, char **argv) {
   }
 
   benchmark::Initialize(&argc, argv);
-  // if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
+  if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
   //////////////////////////////////////////////////////////////////////////
 
   // Register benchmarks for each problem size
@@ -332,7 +335,7 @@ int main(int argc, char **argv) {
                                        BM_InvariantMassSequential<typename[: c :]>, size, factor, lvl, stride)
               ->Unit(benchmark::kMillisecond)
               ->Name(std::string("InvariantMassSequential_") + std::string(identifier_of(c)));
-        }      
+        }
       }
     }
 
