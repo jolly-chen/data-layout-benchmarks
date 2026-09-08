@@ -257,7 +257,7 @@ int main(int argc, char **argv) {
       ^^containers, std::meta::access_context::current()))) {
       std::vector<size_t> problem_sizes;
       for (const auto &factor : factors) {
-        problem_sizes.push_back(static_cast<size_t>(factor * topo->cacheLevels[lvl].size / [: c :]::bytes_for_one));
+        problem_sizes.push_back(static_cast<size_t>(factor * topo->cacheLevels[lvl].size / [: c :]::bytes_for_one / 3));
       }
 
       for (auto const [factor, size] : std::views::zip(factors, problem_sizes)) {
