@@ -20,6 +20,18 @@ python3 generate_datastructures.py --data_spec particle_used.spec
 
 /usr/bin/time -v make main &> "${log_file}"
 likwid-pin -C 0 ./main --input input_files --benchmark_enable_random_interleaving --benchmark_repetitions=10 \
-    --benchmark_min_warmup_time=1 --benchmark_min_time=2s --benchmark_format=json \
-    --benchmark_perf_counters=HARDWARE_PREFETCH_DATA_CACHE_FILLS:LCL_L2:LCL_L2:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR \
-    &> "${out_file}"
+--benchmark_min_warmup_time=1 --benchmark_min_time=2s --benchmark_format=json --benchmark_filter=InvariantMassSequential \
+--benchmark_perf_counters=HARDWARE_PREFETCH_DATA_CACHE_FILLS:LCL_L2:LCL_L2:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR,\
+L2_PREFETCH_HIT_L2:L2_STREAM:L2_NEXT_LINE:L2_UP_DOWN:L2_UP_DOWN:L2_STRIDE:L1_STREAM:L1_STRIDE:L1_REGION,\
+L2_PREFETCH_HIT_L3:L2_STREAM:L2_NEXT_LINE:L2_UP_DOWN:L2_UP_DOWN:L2_STRIDE:L1_STREAM:L1_STRIDE:L1_REGION,\
+L2_PREFETCH_MISS_L3:L2_STREAM:L2_NEXT_LINE:L2_UP_DOWN:L2_UP_DOWN:L2_STRIDE:L1_STREAM:L1_STRIDE:L1_REGION\
+    &> "results/${out_file}"
+
+
+likwid-pin -C 0 ./main --input input_files --benchmark_enable_random_interleaving --benchmark_repetitions=10 \
+--benchmark_min_warmup_time=1 --benchmark_min_time=2s --benchmark_format=json --benchmark_filter=VectorAdd \
+--benchmark_perf_counters=HARDWARE_PREFETCH_DATA_CACHE_FILLS:LCL_L2:LCL_L2:NEAR_CACHE_NEAR_FAR:DRAM_IO_NEAR:FAR_CACHE_NEAR_FAR:DRAM_IO_FAR:ALT_MEM_NEAR_FAR,\
+L2_PREFETCH_HIT_L2:L2_STREAM:L2_NEXT_LINE:L2_UP_DOWN:L2_UP_DOWN:L2_STRIDE:L1_STREAM:L1_STRIDE:L1_REGION,\
+L2_PREFETCH_HIT_L3:L2_STREAM:L2_NEXT_LINE:L2_UP_DOWN:L2_UP_DOWN:L2_STRIDE:L1_STREAM:L1_STRIDE:L1_REGION,\
+L2_PREFETCH_MISS_L3:L2_STREAM:L2_NEXT_LINE:L2_UP_DOWN:L2_UP_DOWN:L2_STRIDE:L1_STREAM:L1_STRIDE:L1_REGION\
+    &> results/vector_add.out

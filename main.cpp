@@ -204,12 +204,12 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor
 
   for (auto _ : state) {
     kernels::InvariantMassSequential(v1, v2, results);
+    benchmark::DoNotOptimize(results);
+    benchmark::ClobberMemory();
   }
 
   if (!opts.validation.empty()) {
     ValidateResults("InvariantMassSequential", results, n);
-    benchmark::DoNotOptimize(results);
-    benchmark::ClobberMemory();
   }
 
   state.counters["problem_size"] = n;
@@ -218,6 +218,27 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor
   state.counters["bytes_for_one"] = Container::bytes_for_one;
   state.counters["bytes_for_all"] = v1.bytes_for_all;
 }
+
+void BM_VectorAdd(benchmark::State &state, size_t n, double factor, int cache_level) {
+  std::vector<double> v1(n), v2(n), results(n);
+  for (size_t i = 0; i < n; ++i) {
+    v1[i] = input_data[0][i].pt;
+    v2[i] = input_data[1][i].pt;
+  }
+
+  for (auto _ : state) {
+    kernels::VectorAdd(v1, v2, results);
+    benchmark::DoNotOptimize(results);
+    benchmark::ClobberMemory();
+  }
+
+  state.counters["problem_size"] = n;
+  state.counters["factor"] = factor;
+  state.counters["cache_level"] = cache_level;
+  state.counters["bytes_for_one"] = sizeof(double);
+  state.counters["bytes_for_all"] = sizeof(double) * n;
+}
+
 
 int main(int argc, char **argv) {
   benchmark::MaybeReenterWithoutASLR(argc, argv);
@@ -264,8 +285,20 @@ int main(int argc, char **argv) {
         benchmark::RegisterBenchmark("BM_InvariantMassSequential",
                                      BM_InvariantMassSequential<typename[: c :]>, size, factor, lvl)
             ->Unit(benchmark::kMillisecond)
-            ->Name(std::string("InvariantMassSequential_") +
-            std::string(identifier_of(c)));
+            ->Name(std::string("InvariantMassSequential_") + std::string(identifier_of(c)));
+      }
+    }
+
+    {
+      std::vector<size_t> problem_sizes;
+      for (const auto &factor : factors) {
+        problem_sizes.push_back(static_cast<size_t>(factor * topo->cacheLevels[lvl].size / sizeof(double) / 3));
+      }
+
+      for (auto const [factor, size] : std::views::zip(factors, problem_sizes)) {
+        benchmark::RegisterBenchmark("BM_VectorAdd", BM_VectorAdd, size, factor, lvl)
+        ->Unit(benchmark::kMillisecond)
+        ->Name(std::string("VectorAdd"));
       }
     }
   }
