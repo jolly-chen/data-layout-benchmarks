@@ -172,6 +172,8 @@ void ParseOptions(int &argc, char **argv) {
         "options:\n"
         "  --help                               Show this help message and exit\n"
         "  --input INPUT_CONFIG_FILE            File specifying files with input data\n"
+        "  --factors FACTORS                    Comma-separated list of factors to scale the problem size\n"
+        "  --cache_levels CACHE_LEVELS          Comma-separated list of cache levels to test\n"
         "  --validation VALIDATION_CONFIG_FILE  File containing the benchmark name, input size, and name of the file\n"
         "                                       with data to use for validation, separated by commas and one\n"
         "                                       benchmark per line\n"
@@ -181,6 +183,34 @@ void ParseOptions(int &argc, char **argv) {
 
   auto input = cmdLineParser.GetCmdOption("--input");
   if (!input.empty()) { opts.input = input; }
+
+  auto factors = cmdLineParser.GetCmdOption("--factors");
+  if (!factors.empty()) {
+    opts.factors.clear();
+    std::stringstream factor_stream(factors);
+    std::string factor;
+    while (std::getline(factor_stream, factor, ',')) {
+      opts.factors.push_back(std::stod(factor));
+    }
+  }
+  benchmark::AddCustomContext(
+      "factors", std::ranges::to<std::string>(std::views::join_with(
+             std::views::transform(opts.factors, [](double factor) { return std::to_string(factor); }),
+             std::string_view(","))));
+
+  auto cache_levels = cmdLineParser.GetCmdOption("--cache_levels");
+  if (!cache_levels.empty()) {
+    opts.cache_levels.clear();
+    std::stringstream cache_level_stream(cache_levels);
+    std::string cache_level;
+    while (std::getline(cache_level_stream, cache_level, ',')) {
+      opts.cache_levels.push_back(std::stoi(cache_level));
+    }
+  }
+  benchmark::AddCustomContext(
+      "cache_levels", std::ranges::to<std::string>(std::views::join_with(
+             std::views::transform(opts.cache_levels, [](int cache_level) { return std::to_string(cache_level); }),
+             std::string_view(","))));
 
   auto validation = cmdLineParser.GetCmdOption("--validation");
   if (!validation.empty()) { opts.validation = validation; }
@@ -270,18 +300,16 @@ int main(int argc, char **argv) {
   // if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
   //////////////////////////////////////////////////////////////////////////
 
-  const auto factors = std::vector<double>{0.25, 0.5, 0.9, 1, 1.1, 1.25, 2, 4};
   // Register benchmarks for each problem size
-
-  for (const auto &lvl : std::views::iota(size_t{0}, topo->numCacheLevels)) {
+  for (const auto &lvl : opts.cache_levels) {
     template for (constexpr auto &c : std::define_static_array(members_of(
       ^^containers, std::meta::access_context::current()))) {
       std::vector<size_t> problem_sizes;
-      for (const auto &factor : factors) {
+      for (const auto &factor : opts.factors) {
         problem_sizes.push_back(static_cast<size_t>(factor * topo->cacheLevels[lvl].size / [: c :]::bytes_for_one / 3));
       }
 
-      for (auto const [factor, size] : std::views::zip(factors, problem_sizes)) {
+      for (auto const [factor, size] : std::views::zip(opts.factors, problem_sizes)) {
         benchmark::RegisterBenchmark("BM_InvariantMassSequential",
                                      BM_InvariantMassSequential<typename[: c :]>, size, factor, lvl)
             ->Unit(benchmark::kMillisecond)
@@ -291,11 +319,11 @@ int main(int argc, char **argv) {
 
     {
       std::vector<size_t> problem_sizes;
-      for (const auto &factor : factors) {
+      for (const auto &factor : opts.factors) {
         problem_sizes.push_back(static_cast<size_t>(factor * topo->cacheLevels[lvl].size / sizeof(double) / 3));
       }
 
-      for (auto const [factor, size] : std::views::zip(factors, problem_sizes)) {
+      for (auto const [factor, size] : std::views::zip(opts.factors, problem_sizes)) {
         benchmark::RegisterBenchmark("BM_VectorAdd", BM_VectorAdd, size, factor, lvl)
         ->Unit(benchmark::kMillisecond)
         ->Name(std::string("VectorAdd"));

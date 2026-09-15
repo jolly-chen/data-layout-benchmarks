@@ -19,6 +19,8 @@ inline size_t AlignSize(size_t size, size_t alignment) {
 struct FileOpts {
   std::string input = "";      // Option "--input <string>"
   std::string validation = ""; // Option "--validation <string>"
+  std::vector<double> factors = {0.25, 0.5, 0.9, 1, 1.1, 1.25, 2, 4}; // Option "--factors <string>"
+  std::vector<int> cache_levels = {0, 1, 2}; // Option "--cache_levels <string>"
 };
 
 struct ValidationInfo {
