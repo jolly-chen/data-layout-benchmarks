@@ -174,6 +174,7 @@ void ParseOptions(int &argc, char **argv) {
         "  --input INPUT_CONFIG_FILE            File specifying files with input data\n"
         "  --factors FACTORS                    Comma-separated list of factors to scale the problem size\n"
         "  --cache_levels CACHE_LEVELS          Comma-separated list of cache levels to test\n"
+        "  --strides STRIDE                      Comma-separated list of strides to test\n"
         "  --validation VALIDATION_CONFIG_FILE  File containing the benchmark name, input size, and name of the file\n"
         "                                       with data to use for validation, separated by commas and one\n"
         "                                       benchmark per line\n"
@@ -212,13 +213,28 @@ void ParseOptions(int &argc, char **argv) {
              std::views::transform(opts.cache_levels, [](int cache_level) { return std::to_string(cache_level); }),
              std::string_view(","))));
 
+  auto strides = cmdLineParser.GetCmdOption("--strides");
+  if (!strides.empty()) {
+    opts.strides.clear();
+    std::stringstream stride_stream(strides);
+    std::string s;
+    while (std::getline(stride_stream, s, ',')) {
+      opts.strides.push_back(std::stoi(s));
+    }
+  }
+  benchmark::AddCustomContext(
+      "strides", std::ranges::to<std::string>(std::views::join_with(
+             std::views::transform(opts.strides, [](int s) { return std::to_string(s); }),
+             std::string_view(","))));
+
+
   auto validation = cmdLineParser.GetCmdOption("--validation");
   if (!validation.empty()) { opts.validation = validation; }
   // clang-format on
 }
 
 template <class Container>
-void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor, int cache_level) {
+void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor, int cache_level, int stride) {
   Container v1(n, Alignment), v2(n, Alignment);
   for (size_t i = 0; i < n; ++i) {
     v1[i].pt = input_data[0][i].pt;
@@ -233,7 +249,7 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor
   std::vector<double> results(n);
 
   for (auto _ : state) {
-    kernels::InvariantMassSequential(v1, v2, results);
+    kernels::InvariantMassSequential(v1, v2, results, stride);
     benchmark::DoNotOptimize(results);
     benchmark::ClobberMemory();
   }
@@ -244,6 +260,7 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n, double factor
 
   state.counters["problem_size"] = n;
   state.counters["factor"] = factor;
+  state.counters["stride"] = stride;
   state.counters["cache_level"] = cache_level;
   state.counters["bytes_for_one"] = Container::bytes_for_one;
   state.counters["bytes_for_all"] = v1.bytes_for_all;
@@ -310,10 +327,12 @@ int main(int argc, char **argv) {
       }
 
       for (auto const [factor, size] : std::views::zip(opts.factors, problem_sizes)) {
-        benchmark::RegisterBenchmark("BM_InvariantMassSequential",
-                                     BM_InvariantMassSequential<typename[: c :]>, size, factor, lvl)
-            ->Unit(benchmark::kMillisecond)
-            ->Name(std::string("InvariantMassSequential_") + std::string(identifier_of(c)));
+        for (const auto &stride : opts.strides) {
+          benchmark::RegisterBenchmark("BM_InvariantMassSequential",
+                                       BM_InvariantMassSequential<typename[: c :]>, size, factor, lvl, stride)
+              ->Unit(benchmark::kMillisecond)
+              ->Name(std::string("InvariantMassSequential_") + std::string(identifier_of(c)));
+        }      
       }
     }
 

@@ -76,13 +76,16 @@ inline double DeltaR2(const T &eta1, const T &phi1, const T &eta2,
 namespace kernels {
 template <typename T>
 inline void InvariantMassSequential(const T &v1, const T &v2,
-                                    std::span<double> results) {
+                                    std::span<double> results, int stride) {
   assert(v1.size() == v2.size());
   const size_t n = v1.size();
 
-  for (size_t i = 0; i < n; i++) {
-    results[i] = ComputeInvariantMass(v1[i].pt, v1[i].eta, v1[i].phi, v1[i].e,
-                                      v2[i].pt, v2[i].eta, v2[i].phi, v2[i].e);
+  for (int s = 0; s < stride; s++) {
+    for (size_t i = s; i < n; i += stride) {
+      results[i] = ComputeInvariantMass(v1[i].pt, v1[i].eta, v1[i].phi,
+                                        v1[i].e, v2[i].pt, v2[i].eta,
+                                        v2[i].phi, v2[i].e);
+    }
   }
 }
 
