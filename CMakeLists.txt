@@ -11,24 +11,8 @@ find_package(likwid CONFIG REQUIRED COMPONENTS marker)
 include_directories(${LIKWID_INCLUDE_DIRS}) # if not set in likwid-config.cmake
 link_libraries(likwid::likwid)
 
-# Find PAPI
-find_path(PAPI_INCLUDE_DIR papi.h)
-find_library(PAPI_LIBRARIES NAMES papi)
-
-if (PAPI_INCLUDE_DIR)
-    message(STATUS "PAPI include found at: ${PAPI_INCLUDE_DIR}")
-else()
-    message(FATAL_ERROR "PAPI include directory (papi.h) not found.")
-endif()
-
-if (PAPI_LIBRARIES)
-    message(STATUS "PAPI library found at: ${PAPI_LIBRARIES}")
-else()
-    message(FATAL_ERROR "PAPI library (libpapi.a or libpapi.so) not found.")
-endif()
-
-include_directories(${PAPI_INCLUDE_DIR} include)
-link_libraries(${PAPI_LIBRARIES})
+# Helpers and the containers written by layouts/generate_datastructures.py
+include_directories(include layouts layouts/generated)
 
 if (vec)
     message(STATUS "Enabling vectorization flags")
@@ -40,6 +24,6 @@ endif()
 
 add_executable(test test.cpp)
 
-find_package(benchmark)
+find_package(benchmark REQUIRED)
 add_executable(main main.cpp)
 target_link_libraries(main PUBLIC benchmark::benchmark)

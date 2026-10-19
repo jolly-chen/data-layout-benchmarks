@@ -6,6 +6,10 @@
 #include <random>
 
 #include <cassert>
+#include <string>
+#include <vector>
+
+using namespace layouts::S;
 
 template <typename T> void VectorSum(const T &v1, const T &v2, const std::string &tname) {
   std::cout << "Running VectorSum test with " << tname << "..."<< std::endl;

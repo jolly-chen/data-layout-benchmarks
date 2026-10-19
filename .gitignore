@@ -39,3 +39,6 @@
 
 # debug information files
 *.dwo
+
+# Headers written by layouts/generate_datastructures.py
+layouts/generated/

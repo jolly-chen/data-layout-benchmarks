@@ -1,12 +1,20 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 
-# This script generates partitioned data structures for benchmarking different data layouts in main.cpp.
+# This script generates partitioned data structures for benchmarking different data layouts.
 # It writes C++ struct definitions of containers that partition the members of a base struct into substructures,
 # either in contiguous memory or separately allocated. The generated containers provide an
-# Array of Structures (AoS)-like interface via proxy reference structs.
+# Array of Structures (AoS)-like interface via proxy reference structs, and satisfy the LayoutOf
+# concept in layout_helpers.h.
+#
+# Output (in --output_dir, default layouts/generated):
+#   layouts_<Struct>.h  containers for the struct in the spec, in namespace layouts::<Struct>
+#   layouts_index.h     includes all layouts_*.h in the directory
+#   test.h              containers used by test.cpp
 
 from itertools import permutations
+from pathlib import Path
 import itertools
+import io
 import numpy as np
 import argparse
 
@@ -79,7 +87,7 @@ def deallocate_contiguous_partitions(partition, struct_name_base):
     :param partition: List of partitions, each a list of member indices
     :param struct_name_base: Base name of the struct
     """
-    s = "        for (size_t i = n - 1; i != 0; --i) {\n"
+    s = "        for (size_t i = 0; i < n; ++i) {\n"
     for si, subset in enumerate(partition):
         memtype = substructure_string(subset, struct_name_base)
         s += f"              p{si}[i].~{memtype}();\n"
@@ -113,7 +121,8 @@ def assign_partitions(partition, struct_name_base):
         memtype = substructure_string(subset, struct_name_base)
         if si != 0:
             s += "\n"
-        s += f"        p{si} = std::unique_ptr<{substructure_string(subset, struct_name_base)}[], StorageDeleter<{substructure_string(subset, struct_name_base)}>>(static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment))), StorageDeleter<{substructure_string(subset, struct_name_base)}>());"
+        s += f"        p{si} = std::unique_ptr<{substructure_string(subset, struct_name_base)}[], StorageDeleter<{substructure_string(subset, struct_name_base)}>>(static_cast<{memtype}*>(std::aligned_alloc(alignment, AlignSize(n * sizeof({memtype}), alignment))), StorageDeleter<{substructure_string(subset, struct_name_base)}>());\n"
+        s += f"        if (!p{si} && n != 0) {{ throw std::bad_alloc(); }}"
     return s
 
 
@@ -130,7 +139,7 @@ def assign_proxyref(members, partition, struct_name_base):
         for im, m in enumerate(subset):
             mapping[m] = [si, im]
 
-    s = f"return {struct_name_base}Ref{{ {', '.join([f'p{si}[index].{members[m][1]}' for m, (si, im) in enumerate(mapping)])} }};"
+    s = f"return reference{{ {', '.join([f'p{si}[index].{members[m][1]}' for m, (si, im) in enumerate(mapping)])} }};"
     return s
 
 
@@ -216,6 +225,22 @@ def generate_partitions(members, contiguous, only=None):
 ###########
 
 
+def bytes_for_all_expression(partition, struct_name_base):
+    """
+    Get the C++ expression for the number of bytes allocated for n elements, including the
+    padding that aligns every partition to `alignment`.
+
+    :param partition: List of partitions, each a list of member indices
+    :param struct_name_base: Base name of the struct
+    """
+    return " + ".join(
+        [
+            f"AlignSize(n * sizeof({substructure_string(subset, struct_name_base)}), alignment)"
+            for subset in partition
+        ]
+    )
+
+
 def write_contiguous_partition(
     f, struct_name_base, partition_string, partition, members
 ):
@@ -233,22 +258,29 @@ def write_contiguous_partition(
     f.write(
         f"""
 struct PartitionedContainerContiguous{partition_string} {{
+    using value_type = ::{struct_name_base};
+    using reference = ::{struct_name_base}Ref;
+
 { define_contiguous_partitions_struct(partition, struct_name_base) }
     std::unique_ptr<std::byte[], StorageDeleter<std::byte>> storage;
     size_t n;
 
     static std::string to_string() {{ return "PartitionedContainerContiguous{partition_string}"; }}
 
+    static size_t bytes_for_all(size_t n, size_t alignment) {{
+        return { bytes_for_all_expression(partition, struct_name_base) };
+    }}
+
     PartitionedContainerContiguous{partition_string}(size_t n, size_t alignment) : n(n) {{
         // Allocate each partition
-        size_t total_size = 0 + { " + ".join([ f"AlignSize(n * sizeof({substructure_string(subset, struct_name_base)}), alignment)" for subset in partition ]) };
-        storage = std::unique_ptr<std::byte[], StorageDeleter<std::byte>>(static_cast<std::byte*>(std::aligned_alloc(alignment, total_size)), StorageDeleter<std::byte>());
+        storage = std::unique_ptr<std::byte[], StorageDeleter<std::byte>>(static_cast<std::byte*>(std::aligned_alloc(alignment, bytes_for_all(n, alignment))), StorageDeleter<std::byte>());
+        if (!storage && n != 0) {{ throw std::bad_alloc(); }}
 
         // Assign each partition to its location in the storage vector
 { assign_contiguous_partitions(partition, struct_name_base) }
     }}
 
-    inline {struct_name_base}Ref operator[](const size_t index) const {{
+    inline reference operator[](const size_t index) const {{
         { assign_proxyref(members, partition, struct_name_base) }
     }}
 
@@ -278,16 +310,23 @@ def write_partition(f, struct_name_base, partition_string, partition, members):
     f.write(
         f"""
 struct PartitionedContainer{partition_string} {{
+    using value_type = ::{struct_name_base};
+    using reference = ::{struct_name_base}Ref;
+
 { define_partitions_struct(partition, struct_name_base) }
     size_t n;
 
     static std::string to_string() {{ return "PartitionedContainer{partition_string}"; }}
 
+    static size_t bytes_for_all(size_t n, size_t alignment) {{
+        return { bytes_for_all_expression(partition, struct_name_base) };
+    }}
+
     PartitionedContainer{partition_string}(size_t n, size_t alignment) : n(n) {{
 { assign_partitions(partition, struct_name_base) }
     }}
 
-    inline {struct_name_base}Ref operator[](const size_t index) const {{
+    inline reference operator[](const size_t index) const {{
         { assign_proxyref(members, partition, struct_name_base) }
     }}
 
@@ -295,6 +334,29 @@ struct PartitionedContainer{partition_string} {{
 }};
 """
     )
+
+
+def write_reference_struct(f, struct_name_base, members):
+    """
+    Write the proxy reference struct returned by operator[] of the containers. It holds a
+    reference to every member and can be assigned from a value of the original struct, so
+    containers can be filled without knowing the member names.
+
+    :param f: File object to write to
+    :param struct_name_base: Base name of the struct
+    :param members: List of tuples (data_type, member_name) containing all members in the original structure
+    """
+    lines = [f"struct {struct_name_base}Ref {{"]
+    for dtype, name in members:
+        lines.append(f"    {dtype}& {name};")
+    lines.append("")
+    lines.append(f"    {struct_name_base}Ref& operator=(const {struct_name_base}& other) {{")
+    for _, name in members:
+        lines.append(f"        {name} = other.{name};")
+    lines.append("        return *this;")
+    lines.append("    }")
+    lines.append("};")
+    f.write("\n".join(lines) + "\n\n")
 
 
 def write_subsets(f, struct_name_base, members, subsets):
@@ -308,7 +370,7 @@ def write_subsets(f, struct_name_base, members, subsets):
     :param subsets: List of subsets, each a list of member indices
     """
     f.write(generate_struct_definition(struct_name_base, members) + "\n\n")
-    f.write(generate_struct_definition(f"{struct_name_base}Ref", members, "&") + "\n\n")
+    write_reference_struct(f, struct_name_base, members)
 
     for subset in subsets:
         subset_string = "".join(str(i) for i in subset)
@@ -321,41 +383,63 @@ def write_subsets(f, struct_name_base, members, subsets):
         )
 
 
-def write_benchmarks(p_list, struct_name_base, members, contiguous):
+def write_header(path, guard, struct_name_base, members, subsets, containers):
     """
-    Write the benchmark invocations in main.cpp for all generated partitioned containers.
+    Write a header with the original struct, its proxy reference struct, the substructures and
+    the containers. The containers are placed in namespace layouts::<struct_name_base>, so headers
+    for different structs can be included together and the driver can enumerate the containers
+    of one struct by reflection.
 
-    :param p_list: List of partition strings
+    :param path: Output file
+    :param guard: Include guard macro
     :param struct_name_base: Base name of the struct
     :param members: List of tuples (data_type, member_name) containing all members in the original structure
-    :param contiguous: Whether to use contiguous partitioned containers
+    :param subsets: List of subsets, each a list of member indices
+    :param containers: String with the container definitions
     """
-    with open("main.cpp", "r") as f:
-        lines = f.readlines()
+    with open(path, "w") as f:
+        f.write(f"#ifndef {guard}\n")
+        f.write(f"#define {guard}\n")
+        f.write("// THIS FILE IS GENERATED USING layouts/generate_datastructures.py\n")
+        f.write('#include "layout_helpers.h"\n\n')
 
-    with open("main.cpp", "w") as f:
-        main_start = [i for i, l in enumerate(lines) if "problem_sizes" in l][-1]
-        f.writelines(lines[: main_start + 1])
+        write_subsets(f, struct_name_base, members, subsets)
 
-        f.write(f"    // THIS IS GENERATED USING generate_datastructures.py\n")
-        for p_string in p_list:
-            f.write(
-                f"    RunAllBenchmarks<PartitionedContainer{'Contiguous' if contiguous else ''}{p_string}>(size);\n"
-            )
+        f.write(f"\nnamespace layouts::{struct_name_base} {{\n")
+        f.write(containers)
+        f.write(f"}} // namespace layouts::{struct_name_base}\n")
+        f.write(f"\n#endif // {guard}\n")
 
-        f.write("  }\n\n")
-        f.write("  benchmark::RunSpecifiedBenchmarks();\n")
-        f.write("  benchmark::Shutdown();\n")
-        f.write("  return 0;\n}\n// END GENERATED CODE\n")
+
+def write_index(output_dir):
+    """
+    Write layouts_index.h, which includes every layouts_<Struct>.h in output_dir. Delete a
+    layouts_<Struct>.h to drop that struct.
+
+    :param output_dir: Directory with the generated headers
+    """
+    structs = sorted(
+        p.stem.removeprefix("layouts_")
+        for p in output_dir.glob("layouts_*.h")
+        if p.name != "layouts_index.h"
+    )
+    with open(output_dir / "layouts_index.h", "w") as f:
+        f.write("#ifndef LAYOUTS_INDEX_H\n")
+        f.write("#define LAYOUTS_INDEX_H\n")
+        f.write("// THIS FILE IS GENERATED USING layouts/generate_datastructures.py\n")
+        for s in structs:
+            f.write(f'#include "layouts_{s}.h"\n')
+        f.write("\n#endif // LAYOUTS_INDEX_H\n")
+    print(f"Wrote {output_dir / 'layouts_index.h'} with structs: {', '.join(structs)}")
 
 
 def write_partitioned_structs(
-    struct_name_base, members, start, end, contiguous, only=None, only_every=None
+    output_dir, struct_name_base, members, start, end, contiguous, only=None, only_every=None
 ):
     """
-    Generate partitioned data structures and write them to datastructures.h.
-    Also write benchmark invocations to main.cpp.
+    Generate partitioned data structures and write them to <output_dir>/layouts_<struct_name_base>.h.
 
+    :param output_dir: Directory to write the generated header to
     :param struct_name_base: Base name of the struct
     :param members: List of tuples (data_type, member_name) containing all members in the original structure
     :param start: Start index for batching
@@ -364,129 +448,88 @@ def write_partitioned_structs(
     :param only: List of codewords to only generate specific partitions
     :param only_every: Only generate every n-th partition (always includes AoS and SoA)
     """
-    with open("datastructures.h", "w") as f:
-        p_list = []
-        s_list = []
+    aos_string = "".join(str(i) for i in range(len(members)))
+    soa_string = "_".join(str(i) for i in range(len(members)))
 
-        for ip, partition in enumerate(generate_partitions(members, contiguous, only)):
-            if end and len(p_list) >= end:
-                break
+    f = io.StringIO()
+    p_list = []
+    s_list = []
 
-            # Encode e.g., [[0,2],[1,3]] as "02_13"
-            partition_string = "_".join(
-                ["".join(str(m) for m in subset) for subset in partition]
+    for ip, partition in enumerate(generate_partitions(members, contiguous, only)):
+        if end and len(p_list) >= end:
+            break
+
+        # Encode e.g., [[0,2],[1,3]] as "02_13"
+        partition_string = "_".join(
+            ["".join(str(m) for m in subset) for subset in partition]
+        )
+
+        if only_every and ip % only_every != 0 and \
+            partition_string != aos_string and partition_string != soa_string:
+            continue
+
+        # Skip duplicates
+        if partition_string in p_list:
+            continue
+        p_list.append(partition_string)
+
+        # Skip the partitions of earlier batches
+        if len(p_list) <= start:
+            continue
+
+        if contiguous:
+            write_contiguous_partition(
+                f, struct_name_base, partition_string, partition, members
             )
+        else:
+            write_partition(f, struct_name_base, partition_string, partition, members)
 
-            if only_every and ip % only_every != 0 and \
-                partition_string != aos_string and partition_string != soa_string:
-                continue
+        for subset in partition:
+            if subset not in s_list:
+                s_list.append(subset)
 
-            # Skip duplicates
-            if partition_string in p_list:
-                # print(f"Skipping duplicate partition {partition_string}")
-                continue
-            p_list.append(partition_string)
-
-            # Skip the partitions of earlier batches
-            if len(p_list) <= start:
-                continue
-
-            if contiguous:
-                write_contiguous_partition(
-                    f,
-                    struct_name_base,
-                    partition_string,
-                    partition,
-                    members,
-                )
-            else:
-                write_partition(
-                    f,
-                    struct_name_base,
-                    partition_string,
-                    partition,
-                    members,
-                )
-
-            for subset in partition:
-                if subset not in s_list:
-                    s_list.append(subset)
-
-        print(f"Generated {len(p_list[start:])} partitioned data structures.")
-
-    with open("datastructures.h", "r") as f:
-        prev_lines = f.readlines()
-
-    with open("datastructures.h", "w") as f:
-        f.write(f"#ifndef DATASTRUCTURES_H\n")
-        f.write(f"#define DATASTRUCTURES_H\n")
-        f.write("// THIS FILE IS GENERATED USING generate_datastructures.py\n")
-        f.write('#include "datastructures.h"\n')
-        f.write('#include "utils.h"\n')
-
-        f.write(
-"""
-template <typename T>
-struct StorageDeleter {
-    void operator()(T* ptr) const { std::free(ptr); }
-};
-
-""")
-
-        write_subsets(f, struct_name_base, members, s_list)
-
-        f.writelines(prev_lines)
-        f.write(f"\n#endif // DATASTRUCTURES_H\n")
-
-    write_benchmarks(p_list[start:], struct_name_base, members, contiguous)
+    path = output_dir / f"layouts_{struct_name_base}.h"
+    write_header(
+        path,
+        f"LAYOUTS_{struct_name_base.upper()}_H",
+        struct_name_base,
+        members,
+        s_list,
+        f.getvalue(),
+    )
+    print(f"Generated {len(p_list[start:])} partitioned data structures in {path}.")
 
 
-def write_test_partitions():
+def write_test_partitions(output_dir):
     """
-    Generate test partitioned data structures used in the unit tests in test.cpp and write them to test.h.
+    Generate test partitioned data structures used in the unit tests in test.cpp and write them
+    to <output_dir>/test.h.
+
+    :param output_dir: Directory to write test.h to
     """
     struct_name_base = "S"
     members = [("int", "x"), ("double", "y"), ("float", "z"), ("char", "w")]
 
-    with open("test.h", "w") as f:
-        p_list = [[[0, 1], [2, 3]], [[0], [1], [2], [3]], [[0], [1], [2, 3]]]
-        s_list = []
+    f = io.StringIO()
+    p_list = [[[0, 1], [2, 3]], [[0], [1], [2], [3]], [[0], [1], [2, 3]]]
+    s_list = []
 
-        for partition in p_list:
-            partition_string = "_".join(
-                ["".join(str(m) for m in subset) for subset in partition]
-            )
-            write_contiguous_partition(
-                f, struct_name_base, partition_string, partition, members
-            )
-            write_partition(f, struct_name_base, partition_string, partition, members)
+    for partition in p_list:
+        partition_string = "_".join(
+            ["".join(str(m) for m in subset) for subset in partition]
+        )
+        write_contiguous_partition(
+            f, struct_name_base, partition_string, partition, members
+        )
+        write_partition(f, struct_name_base, partition_string, partition, members)
 
-            for subset in partition:
-                if subset not in s_list:
-                    s_list.append(subset)
+        for subset in partition:
+            if subset not in s_list:
+                s_list.append(subset)
 
-    with open("test.h", "r") as f:
-        prev_lines = f.readlines()
-
-    with open("test.h", "w") as f:
-        f.write(f"#ifndef TEST_H\n")
-        f.write(f"#define TEST_H\n")
-        f.write("// THIS FILE IS GENERATED USING generate_datastructures.py\n")
-        f.write('#include "utils.h"\n')
-
-        f.write(
-"""
-template <typename T>
-struct StorageDeleter {
-    void operator()(T* ptr) const { std::free(ptr); }
-};
-
-""")
-
-        write_subsets(f, struct_name_base, members, s_list)
-
-        f.writelines(prev_lines)
-        f.write(f"\n#endif // TEST_H\n")
+    write_header(
+        output_dir / "test.h", "TEST_H", struct_name_base, members, s_list, f.getvalue()
+    )
 
 
 if __name__ == "__main__":
@@ -496,6 +539,12 @@ if __name__ == "__main__":
         type=str,
         help="Data member specification for which to generate data structures",
         required=True,
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        help="Directory for the generated headers (default: layouts/generated)",
+        default=str(Path(__file__).resolve().parent / "generated"),
     )
     parser.add_argument(
         "--batch_size",
@@ -529,7 +578,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(
-        f"Configuration:\n  batch_size={args.batch_size}\n  batch_num={args.batch_num}\n  contiguous={args.contiguous}\n  only={args.only}\n  only_every={args.only_every}"
+        f"Configuration:\n  output_dir={args.output_dir}\n  batch_size={args.batch_size}\n  batch_num={args.batch_num}\n  contiguous={args.contiguous}\n  only={args.only}\n  only_every={args.only_every}"
     )
 
     if args.batch_size == -1:
@@ -542,12 +591,24 @@ if __name__ == "__main__":
     with open(args.data_spec, "r") as f:
         lines = f.readlines()
         struct_name_base = lines[0].strip()
-        data_members = [line.strip().split() for line in lines[1:]]
+        data_members = [line.strip().split() for line in lines[1:] if line.strip()]
         print(data_members)
-        aos_string = "".join([str(i) for i in range(len(data_members))])
-        soa_string = "_".join([str(i) for i in range(len(data_members))])
+
+    # Member indices are joined without a separator in codewords and struct
+    # names, so they must be single digits
+    if len(data_members) > 10:
+        parser.error(
+            f"{args.data_spec} has {len(data_members)} members; data structures with more than 10 members are not supported yet"
+        )
+    # layouts_index.h is the index of the generated headers
+    if struct_name_base == "index":
+        parser.error(f"{args.data_spec}: the struct cannot be named 'index'")
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     write_partitioned_structs(
+        output_dir,
         struct_name_base,
         data_members,
         start,
@@ -556,5 +617,5 @@ if __name__ == "__main__":
         args.only,
         args.only_every
     )
-
-    write_test_partitions()
+    write_index(output_dir)
+    write_test_partitions(output_dir)

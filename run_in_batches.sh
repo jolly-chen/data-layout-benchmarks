@@ -19,7 +19,7 @@ cmake . -Dvec=on
 for (( batch_num=0; batch_num < NUM_BATCHES; batch_num++ ))
 do
     echo "Running batch $((batch_num + 1)) / $NUM_BATCHES (with batch size $BATCH_SIZE)"
-    python3 generate_datastructures.py --data_spec particle.spec --batch_size $BATCH_SIZE --batch_num $batch_num
+    python3 layouts/generate_datastructures.py --data_spec layouts/specs/particle.spec --batch_size $BATCH_SIZE --batch_num $batch_num
     /usr/bin/time -v make main
     # -q: likwid-pin would otherwise print to stdout, into the JSON results
     likwid-pin -q -C 0 ./main --input "$INPUT_LIST_FILE" --benchmark_format=json > "${OUTPUT_PREFIX}_${batch_num}.json"

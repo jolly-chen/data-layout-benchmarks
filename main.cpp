@@ -1,7 +1,9 @@
 #include <benchmark/benchmark.h> // https://github.com/google/benchmark
 
 #include "benchmarks.h"
-#include "datastructures.h"
+#include "layout_helpers.h"
+#include "layouts_index.h"
+#include "utils.h"
 
 #include <algorithm>
 #include <random>
@@ -309,14 +311,12 @@ int main(int argc, char **argv) {
   if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
   //////////////////////////////////////////////////////////////////////////
 
+  // Register the benchmarks for every generated layout of Particle
   for (auto &size : problem_sizes) {
-    // THIS IS GENERATED USING generate_datastructures.py
-    RunAllBenchmarks<PartitionedContainer0123456>(size);
-    RunAllBenchmarks<PartitionedContainer0_1_2_3_4_5_6>(size);
+    ForEachLayout<Particle>([&]<class C>() { RunAllBenchmarks<C>(size); });
   }
 
   benchmark::RunSpecifiedBenchmarks();
   benchmark::Shutdown();
   return 0;
 }
-// END GENERATED CODE

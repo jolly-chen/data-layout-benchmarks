@@ -9,10 +9,6 @@
 #include <vector>
 #include <ranges>
 
-inline size_t AlignSize(size_t size, size_t alignment) {
-  return (size + alignment - 1) / alignment * alignment;
-}
-
 struct FileOpts {
   std::string input = "";      // Option "--input <string>"
   std::string validation = ""; // Option "--validation <string>"
