@@ -1,0 +1,54 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    # GCC 16 implements C++26 reflection (-freflection)
+    container: gcc:16
+    env:
+      LIKWID_VERSION: 5.5.1
+      # main.cpp needs benchmark::MaybeReenterWithoutASLR (google benchmark >= 1.9.3)
+      BENCHMARK_VERSION: 1.9.5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake python3 python3-numpy
+
+      - name: Install google benchmark
+        run: |
+          wget -q https://github.com/google/benchmark/archive/refs/tags/v${BENCHMARK_VERSION}.tar.gz
+          tar -xzf v${BENCHMARK_VERSION}.tar.gz
+          cmake -S benchmark-${BENCHMARK_VERSION} -B benchmark-build -DCMAKE_BUILD_TYPE=Release \
+            -DBENCHMARK_ENABLE_TESTING=OFF -DBENCHMARK_ENABLE_GTEST_TESTS=OFF
+          cmake --build benchmark-build -j $(nproc)
+          cmake --install benchmark-build
+
+      - name: Install likwid
+        run: |
+          wget -q https://github.com/RRZE-HPC/likwid/archive/refs/tags/v${LIKWID_VERSION}.tar.gz
+          tar -xzf v${LIKWID_VERSION}.tar.gz
+          # likwid's build locates its bundled hwloc through $PWD, so run make
+          # from its directory rather than with make -C
+          cd likwid-${LIKWID_VERSION}
+          make -j $(nproc) PREFIX=/usr/local
+          make install PREFIX=/usr/local
+          ldconfig
+
+      - name: Generate layouts
+        run: python3 layouts/generate_datastructures.py --data_spec layouts/specs/particle.spec --only 0123456 0_1_2_3_4_5_6
+
+      - name: Configure
+        run: cmake -B build -DBUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build -j $(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
