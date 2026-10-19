@@ -1,8 +1,10 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <string>
 #include <type_traits>
 #include <vector>
 #include <ranges>

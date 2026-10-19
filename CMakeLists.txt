@@ -5,8 +5,6 @@ project(data_layout_benchmarks)
 set(CMAKE_CXX_STANDARD 26)
 
 add_compile_options(-O3 -Wall -Wextra -march=native -freflection)
-add_compile_options(-fsanitize=undefined  -fno-omit-frame-pointer)
-add_link_options(-fsanitize=undefined)
 
 # Find LIKWID
 find_package(likwid CONFIG REQUIRED COMPONENTS marker)

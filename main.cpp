@@ -39,10 +39,9 @@ void ReadData(std::string filename, size_t n,
         std::string line;
         for (size_t i = 0; i < n; ++i) {
           if (!getline(ii_stream, line)) {
-            throw std::runtime_error("Not enough data in file " + filename +
+            throw std::runtime_error("Not enough data in file " + input_file +
                                      " for requested size " +
                                      std::to_string(n));
-            break;
           }
 
           std::stringstream ss(line);
@@ -59,7 +58,7 @@ void ReadData(std::string filename, size_t n,
         }
         ii_stream.close();
       } else {
-        throw std::runtime_error("Failed to open file " + filename +
+        throw std::runtime_error("Failed to open file " + input_file +
                                  " for reading");
       }
 
@@ -69,8 +68,6 @@ void ReadData(std::string filename, size_t n,
     throw std::runtime_error("Failed to open file " + filename +
                              " for reading");
   }
-
-  input_data.resize(n);
 }
 
 /* Parse validation info from the given CSV file. */
@@ -130,11 +127,20 @@ void ValidateResults(const std::string_view benchmark_name,
     if (validation_file != validation_data.end()) {
       auto expected_results =
           ReadValidationData(validation_file->validation_file);
+      if (expected_results.size() < results.size()) {
+        std::fprintf(stderr,
+                     "\033[1;31mVALIDATION FAILED\033[0m for benchmark %s with "
+                     "input size %zu: %s has %zu values, expected at least %zu\n",
+                     benchmark_name.data(), in_size,
+                     validation_file->validation_file.c_str(),
+                     expected_results.size(), results.size());
+        return;
+      }
       for (size_t j = 0; j < results.size(); ++j) {
         if (std::abs(results[j] - expected_results[j]) > 1e-6) {
           std::fprintf(
               stderr,
-              "\033[1;31mVALIDATION FAILED\033[0m for benchmark %s with input1 "
+              "\033[1;31mVALIDATION FAILED\033[0m for benchmark %s with input "
               "size %zu at index %zu: expected %f, got %f\n",
               benchmark_name.data(), in_size, j, expected_results[j],
               results[j]);
@@ -198,6 +204,8 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n) {
 
   for (auto _ : state) {
     kernels::InvariantMassSequential(v1, v2, results);
+    benchmark::DoNotOptimize(results);
+    benchmark::ClobberMemory();
   }
 
   if (!opts.validation.empty()) {
@@ -250,8 +258,9 @@ void BM_InvariantMassRandom(benchmark::State &state, size_t n) {
 template <typename Container>
 void RunAllBenchmarks(size_t n) {
   // Register benchmarks for a specific problem size
-  benchmark::RegisterBenchmark("BM_InvariantMassSequential", BM_InvariantMassSequential<Container>, n) 
-    ->Unit(benchmark::kMillisecond);
+  benchmark::RegisterBenchmark("BM_InvariantMassSequential", BM_InvariantMassSequential<Container>, n)
+    ->Unit(benchmark::kMillisecond)
+    ->Name(std::string("InvariantMassSequential_") + std::string(Container::to_string()));
 
   benchmark::RegisterBenchmark("BM_InvariantMassRandom", BM_InvariantMassRandom<Container>, n)
     ->Unit(benchmark::kMillisecond)
@@ -280,6 +289,12 @@ int main(int argc, char **argv) {
   // Get input data
   if (!opts.input.empty()) {
     ReadData(opts.input, *std::ranges::max_element(problem_sizes), input_data);
+    // The benchmarks read the first two datasets
+    if (input_data.size() < 2) {
+      std::cerr << opts.input << " lists " << input_data.size()
+                << " dataset(s), but the benchmarks need 2. Exiting." << std::endl;
+      return EXIT_FAILURE;
+    }
   } else {
     std::cerr << "No input data specified. Exiting." << std::endl;
     return EXIT_FAILURE;

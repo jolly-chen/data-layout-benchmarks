@@ -10,7 +10,7 @@ The benchmark suite consists of 3 main parts:
 
 For an array of a data structure with N data members, the data layout generator generates all possible data layouts by permuting the order of the data members and grouping them into arrays. The total number of generated layouts, $N_n$ is given by the recursive formula: $N_n = 2 \cdot (n-1) \cdot N_{n-1} - (n-1)\cdot(n-2)\cdot N_{n-2}$ with $N_0 = N_1 = 1$.
 
-The main file runs the benchmarks kernels for each generated data layout. By default, the kernels are run with two sizes of the input arrays: (1) smaller than L1 cache size and (2) larger than L3 cache size. The results are output in csv format results, which can be plotted using `plot_results.py` to visualize the performance impact of different data layouts.
+The main file runs the benchmarks kernels for each generated data layout. By default, the kernels are run with two sizes of the input arrays: (1) smaller than L1 cache size and (2) larger than L3 cache size. The results are reported by [google benchmark](https://github.com/google/benchmark), on the console or, e.g., as JSON with `--benchmark_format=json`. `plot_results.py` contains plotting functions for an earlier CSV format of the results.
 
 ## File Descriptions
 - (1) `benchmarks.h`: Contains  a set of kernels that perform computations on a particle data structure, representing common operations in high-energy physics.
@@ -19,7 +19,7 @@ The main file runs the benchmarks kernels for each generated data layout. By def
   - *output* `datastructures.h`: contains the generated data structures with different data layouts. This file is included by `main.cpp`.
   - *modifies* `main.cpp`: adds calls to the benchmarks in `benchmarks.h` with the generated data structures as input. The generated code is added between the comments `// BEGIN GENERATED CODE` and `// END GENERATED CODE`.
 - (3) `main.cpp`: The main file that reads initialization data, calls the benchmarks with the generated data structures as input, and writes the results to stdout or a file.
-  - *output*: results of the benchmarks in csv format: benchmark name, layout, array size in elements, data structure size in bytes, time unit, and one or more performance events.
+  - *output*: one google benchmark result per benchmark, layout and problem size, named `<benchmark>_<layout>`, with the counters `problem_size` (array size in elements) and `reference_size` (size of the proxy reference returned by the container).
 - `plot_results.py`: A script that contains several methods to plot the results of the benchmarks as a scatter plot or histogram.
 
 Miscellaneous:
@@ -45,7 +45,7 @@ make
 ```
 python3 generate_datastructures.py --data_spec <filename>
 make
-likwid-pin -C <core_num> ./main --input1 <filename> --input2 <filename> --output <filename> --papi_events "<event1,event2,...>"
+likwid-pin -C <core_num> ./main --input <input list file> [--validation <validation list file>] [google benchmark options]
 ```
 Run `generate_datastructures.py --help` for more options on how to run the data structure generator. Run `./main --help` for more options on how to run the benchmarks.
 
@@ -60,9 +60,9 @@ We recommend pinning the benchmarks to a specific core using `likwid-pin` to avo
 
 #### Run with specific data layouts
 ```
-python3 generate_datastructures.py --data_spec <filename> --only "layout1 layout2 ..."
+python3 generate_datastructures.py --data_spec <filename> --only layout1 layout2 ...
 make
-likwid-pin -C <core_num> ./main --input1 <filename> --input2 <filename> --output <filename> --papi_events "<event1,event2,...>"
+likwid-pin -C <core_num> ./main --input <input list file> [--validation <validation list file>] [google benchmark options]
 ```
 Layouts are in the format of e.g., `0123456` for an AoS of a data structure with 7 fields, and `0_1_2_3_4_5_6` for an SoA.
 

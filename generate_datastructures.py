@@ -387,7 +387,8 @@ def write_partitioned_structs(
                 continue
             p_list.append(partition_string)
 
-            if len(p_list) < start:
+            # Skip the partitions of earlier batches
+            if len(p_list) <= start:
                 continue
 
             if contiguous:
