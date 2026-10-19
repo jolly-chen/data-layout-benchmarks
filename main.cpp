@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h> // https://github.com/google/benchmark
 
 #include "benchmarks.h"
+#include "datasets.h"
 #include "layout_helpers.h"
 #include "layouts_index.h"
 #include "utils.h"
@@ -15,8 +16,8 @@
 #include <ios>
 #include <print>
 
-// TODO: make Particle generic
-std::vector<std::vector<Particle>> input_data; // Cache for input data
+// Input data of the benchmarks, per element type
+Datasets datasets;
 
 // // Global options parsed from the command line.
 FileOpts opts;
@@ -25,52 +26,6 @@ FileOpts opts;
 std::vector<ValidationInfo> validation_data;
 
 size_t Alignment = 64; // Default alignment, will be set based on CPU topology
-
-/* Read Lorentzvector (pt, eta, phi, e) data from the given CSV file into
- * the container. */
-void ReadData(std::string filename, size_t n,
-              std::vector<std::vector<Particle>> &input_data) {
-  std::ifstream i_stream(filename);
-  if (i_stream.is_open()) {
-    size_t file_num = 0;
-    for (std::string input_file; getline(i_stream, input_file);) {
-      input_data.push_back(std::vector<Particle>(n));
-
-      std::ifstream ii_stream(input_file);
-      if (ii_stream.is_open()) {
-        std::string line;
-        for (size_t i = 0; i < n; ++i) {
-          if (!getline(ii_stream, line)) {
-            throw std::runtime_error("Not enough data in file " + input_file +
-                                     " for requested size " +
-                                     std::to_string(n));
-          }
-
-          std::stringstream ss(line);
-          std::string token;
-
-          getline(ss, token, ',');
-          input_data[file_num][i].pt = std::stod(token);
-          getline(ss, token, ',');
-          input_data[file_num][i].eta = std::stod(token);
-          getline(ss, token, ',');
-          input_data[file_num][i].phi = std::stod(token);
-          getline(ss, token, ',');
-          input_data[file_num][i].e = std::stod(token);
-        }
-        ii_stream.close();
-      } else {
-        throw std::runtime_error("Failed to open file " + input_file +
-                                 " for reading");
-      }
-
-      file_num++;
-    }
-  } else {
-    throw std::runtime_error("Failed to open file " + filename +
-                             " for reading");
-  }
-}
 
 /* Parse validation info from the given CSV file. */
 void ParseValidationInfo(const std::string filename) {
@@ -163,11 +118,21 @@ void ParseOptions(int &argc, char **argv) {
       cmdLineParser.CmdOptionExists("-h")) {
     // clang-format off
     std::printf(
-        "Usage: ./main [-h] [--input INPUT_CONFIG_FILE] "
-        "[--validation VALIDATION_CONFIG_FILE] [--repetitions REPS]\n"
+        "Usage: ./main [-h] --input [STRUCT=]INPUT_LIST_FILE [--input ...] "
+        "[--validation VALIDATION_CONFIG_FILE] [google benchmark options]\n"
         "options:\n"
         "  --help                               Show this help message and exit\n"
-        "  --input INPUT_CONFIG_FILE            File specifying files with input data\n"
+        "  --input [STRUCT=]INPUT_LIST_FILE     File listing the input datasets, one path per line, relative to the\n"
+        "                                       directory of the list file unless absolute. Each dataset is\n"
+        "                                       a CSV file whose first row is a header with names of data members of\n"
+        "                                       the struct (e.g. 'pt,eta,phi,e' for Particle), followed by one row per\n"
+        "                                       element. Members without a column are zero-initialized. Each dataset\n"
+        "                                       needs at least as many rows as the largest problem size. The order\n"
+        "                                       of the lines matters: a benchmark with two inputs reads the first\n"
+        "                                       dataset into its first container and the second into its second.\n"
+        "                                       'STRUCT=' sets the list file for one struct only; without it, the\n"
+        "                                       file is used for every struct that has no list file of its own.\n"
+        "                                       May be repeated.\n"
         "  --validation VALIDATION_CONFIG_FILE  File containing the benchmark name, input size, and name of the file\n"
         "                                       with data to use for validation, separated by commas and one\n"
         "                                       benchmark per line\n"
@@ -175,8 +140,7 @@ void ParseOptions(int &argc, char **argv) {
        std::exit(EXIT_SUCCESS);
   }
 
-  auto input = cmdLineParser.GetCmdOption("--input");
-  if (!input.empty()) { opts.input = input; }
+  opts.inputs = cmdLineParser.GetCmdOptions("--input");
 
   auto validation = cmdLineParser.GetCmdOption("--validation");
   if (!validation.empty()) { opts.validation = validation; }
@@ -185,12 +149,18 @@ void ParseOptions(int &argc, char **argv) {
   // Strip our own options so they are not seen by google benchmark's parser.
   cmdLineParser.RemoveParsedOptions();
 
-  benchmark::AddCustomContext("input", opts.input);
+  std::string inputs;
+  for (const auto &input : opts.inputs) {
+    if (!inputs.empty()) { inputs += " "; }
+    inputs += input;
+  }
+  benchmark::AddCustomContext("input", inputs);
   benchmark::AddCustomContext("validation", opts.validation);
 }
 
 template <class Container>
 void BM_InvariantMassSequential(benchmark::State &state, size_t n) {
+  const auto &input_data = datasets.Get<Particle>();
   Container v1(n, Alignment), v2(n, Alignment);
   for (size_t i = 0; i < n; ++i) {
     v1[i].pt = input_data[0][i].pt;
@@ -222,6 +192,7 @@ void BM_InvariantMassSequential(benchmark::State &state, size_t n) {
 
 template <class Container>
 void BM_InvariantMassRandom(benchmark::State &state, size_t n) {
+  const auto &input_data = datasets.Get<Particle>();
   Container v1(n, Alignment), v2(n, Alignment);
   for (size_t i = 0; i < n; ++i) {
     v1[i].pt = input_data[0][i].pt;
@@ -288,17 +259,23 @@ int main(int argc, char **argv) {
                           sizeof(Particle) / 2); // Does not fit in any cache
   Alignment = topo->cacheLevels[0].lineSize;
 
-  // Get input data
-  if (!opts.input.empty()) {
-    ReadData(opts.input, *std::ranges::max_element(problem_sizes), input_data);
-    // The benchmarks read the first two datasets
-    if (input_data.size() < 2) {
-      std::cerr << opts.input << " lists " << input_data.size()
-                << " dataset(s), but the benchmarks need 2. Exiting." << std::endl;
-      return EXIT_FAILURE;
-    }
-  } else {
+  // Get input data: the benchmarks read the first two Particle datasets
+  if (opts.inputs.empty()) {
     std::cerr << "No input data specified. Exiting." << std::endl;
+    return EXIT_FAILURE;
+  }
+  for (const auto &input : opts.inputs) {
+    if (auto eq = input.find('='); eq != std::string::npos) {
+      datasets.SetListFile(input.substr(0, eq), input.substr(eq + 1));
+    } else {
+      datasets.SetDefaultListFile(input);
+    }
+  }
+  datasets.Reserve<Particle>(*std::ranges::max_element(problem_sizes), 2);
+  try {
+    datasets.Load();
+  } catch (const std::exception &e) {
+    std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;
   }
 

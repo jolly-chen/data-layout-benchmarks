@@ -1,15 +1,21 @@
-import os
 import sys
 import argparse
-import scipy.stats
+import importlib
 import numpy as np
-import ROOT
 
-from pathlib import Path
-from itertools import product
+# Dataset generators, one per struct. Each yields rows with values for the columns it lists.
+# Columns must be named like data members of the struct, since main.cpp maps the header row
+# of a dataset to the members of the struct by name.
 
 
-def generate_random_vectors(ngen, seed):
+def generate_particles(ngen, seed):
+    """
+    Generate PtEtaPhiE vectors.
+    Based on https://github.com/root-project/root/blob/654a2c8eadac3409a65dc017279666e1cd5ccb6d/math/mathcore/test/stress/VectorTest.h#L43
+    """
+    # Imported here, so that generating validation data does not need scipy
+    import scipy.stats
+
     np.random.seed(seed)
     for i in range(ngen):
         pt = np.random.exponential(scale=10.0)
@@ -23,101 +29,57 @@ def generate_random_vectors(ngen, seed):
         yield [pt, eta, phi, e]
 
 
-def generate_dataset(args):
-    """
-    Based on https://github.com/root-project/root/blob/654a2c8eadac3409a65dc017279666e1cd5ccb6d/math/mathcore/test/stress/VectorTest.h#L43
-    """
-    np.random.seed(args.seed)
+# struct name -> (columns, generator)
+DATASET_GENERATORS = {
+    "Particle": (["pt", "eta", "phi", "e"], generate_particles),
+}
 
-    print(f"Generating dataset with {args.ngen} PtEtaPhiE vectors to {args.output}")
+# benchmark name -> module in validation/ with its reference implementation
+VALIDATION_MODULES = {
+    "InvariantMassSequential": "validation.invariant_mass",
+    "DeltaR2Pairwise": "validation.delta_r2",
+}
+
+
+def generate_dataset(args):
+    columns, generator = DATASET_GENERATORS[args.struct]
+
+    print(f"Generating dataset with {args.ngen} {args.struct} elements to {args.output}")
     with open(args.output, "w") as dataset_file:
-        for pt, eta, phi, e in generate_random_vectors(args.ngen, args.seed):
-            dataset_file.write(f"{pt},{eta},{phi},{e}\n")
+        dataset_file.write(",".join(columns) + "\n")
+        for row in generator(args.ngen, args.seed):
+            dataset_file.write(",".join(str(v) for v in row) + "\n")
             dataset_file.flush()
 
 
-def generate_InvariantMassSequential_validation(
-    input1, input2, input_size
-):
-    out_file = f"{os.path.dirname(input1)}/{Path(input1).stem}_{Path(input2).stem}_{input_size}_InvariantMassSequential.validation"
-    print(
-        f"Generating InvariantMassSequential validation for {input1} and {input2} in {out_file}"
-    )
-    with open(input1, "r") as dataset1_file, open(input2, "r") as dataset2_file, open(
-        out_file, "w"
-    ) as validation_file:
-        lines1 = dataset1_file.readlines()[:input_size]
-        lines2 = dataset2_file.readlines()[:input_size]
-        pepe_1 = np.array(
-            [
-                ROOT.Math.PtEtaPhiEVector(*map(np.double, line.strip().split(",")))
-                for line in lines1
-            ]
-        )
-        pepe_2 = np.array(
-            [
-                ROOT.Math.PtEtaPhiEVector(*map(np.double, line.strip().split(",")))
-                for line in lines2
-            ]
-        )
-
-        px1 = ROOT.RVec["double"]([v.Px() for v in pepe_1])
-        py1 = ROOT.RVec["double"]([v.Py() for v in pepe_1])
-        pz1 = ROOT.RVec["double"]([v.Pz() for v in pepe_1])
-        m1 = ROOT.RVec["double"]([v.M() for v in pepe_1])
-        px2 = ROOT.RVec["double"]([w.Px() for w in pepe_2])
-        py2 = ROOT.RVec["double"]([w.Py() for w in pepe_2])
-        pz2 = ROOT.RVec["double"]([w.Pz() for w in pepe_2])
-        m2 = ROOT.RVec["double"]([w.M() for w in pepe_2])
-
-        im = ROOT.VecOps.InvariantMasses_PxPyPzM["double"](
-            px1, py1, pz1, m1, px2, py2, pz2, m2
-        )
-        for s in im:
-            validation_file.write(f"{s}\n")
-
-
-def generate_DeltaR2Pairwise_validation(input1, input_size):
-    out_file = f"{os.path.dirname(input1)}/{Path(input1).stem}_{input_size}_DeltaR2Pairwise.validation"
-    print(f"Generating DeltaR2Pairwise validation for {input1} in {out_file}")
-    with open(input1, "r") as dataset1_file, open(out_file, "w") as validation_file:
-        lines = np.array(
-            [
-                list(map(np.double, line1.strip().split(",")))
-                for line1 in dataset1_file.readlines()[:input_size]
-            ]
-        )
-
-        max_outer_size = 128
-        results_size = round(input_size * (input_size - 1) / 2)
-        indices = [
-            (i, j)
-            for i in range(min(max_outer_size, input_size))
-            for j in range(i + 1, input_size)
-        ]
-
-        eta1 = ROOT.RVec["double"]([lines[i][1] for i, _ in indices])
-        phi1 = ROOT.RVec["double"]([lines[i][2] for i, _ in indices])
-        eta2 = ROOT.RVec["double"]([lines[j][1] for _, j in indices])
-        phi2 = ROOT.RVec["double"]([lines[j][2] for _, j in indices])
-        dr2_vec = ROOT.VecOps.DeltaR2["double"](eta1, eta2, phi1, phi2)
-        for dr2 in dr2_vec:
-            validation_file.write(f"{dr2}\n")
+def generate_validation(args):
+    for benchmark in args.benchmark:
+        # Imported here, so that generating datasets does not need ROOT
+        module = importlib.import_module(VALIDATION_MODULES[benchmark])
+        inputs = [args.input1, args.input2 or args.input1][: module.NUM_INPUTS]
+        module.generate(inputs, args.input_size)
 
 
 def parse_args(args):
     parser = argparse.ArgumentParser(
-        description="Generate dataset of PtEtaPhiE vectors"
+        description="Generate benchmark input datasets and validation data"
     )
     subparsers = parser.add_subparsers(dest="mode")
 
     gen_dataset = subparsers.add_parser("dataset", help="Generate dataset")
     gen_dataset.add_argument(
+        "-s",
+        "--struct",
+        choices=DATASET_GENERATORS.keys(),
+        default="Particle",
+        help="Struct to generate elements of (default: Particle)",
+    )
+    gen_dataset.add_argument(
         "-n",
         "--ngen",
         type=int,
         default=int(10e5),
-        help="Number of vectors to generate (default: 100000)",
+        help="Number of elements to generate (default: 1000000)",
     )
     gen_dataset.add_argument(
         "-o",
@@ -131,7 +93,7 @@ def parse_args(args):
     )
 
     gen_validation = subparsers.add_parser(
-        "validation", help="Generate validation data"
+        "validation", help="Generate validation data (needs ROOT)"
     )
     gen_validation.add_argument(
         "-n",
@@ -148,31 +110,20 @@ def parse_args(args):
         "-i2",
         "--input2",
         type=str,
-        help="Second input dataset file",
+        help="Second input dataset file (default: the first one)",
         required=False,
     )
     gen_validation.add_argument(
         "-b",
         "--benchmark",
         nargs="+",
-        choices=[
-            "DeltaR2Pairwise",
-            "InvariantMassSequential",
-            # "InvariantMassRandom",
-        ],
-        help="Benchmark to generate validation for (DeltaR2Pairwise, InvariantMassSequential, InvariantMassRandom)",
+        choices=VALIDATION_MODULES.keys(),
+        help="Benchmark to generate validation for. InvariantMassRandom is validated against "
+        "InvariantMassSequential.",
         required=True,
     )
 
-    args = parser.parse_args(args)
-    if (
-        args.mode == "validation"
-        and "InvariantMass" in args.benchmark
-        and args.input2 is None
-    ):
-        args.input2 = args.input1
-
-    return args
+    return parser.parse_args(args)
 
 
 if __name__ == "__main__":
@@ -182,21 +133,11 @@ if __name__ == "__main__":
 
     if args.mode == "dataset":
         print(
-            f"\tMode: Dataset Generation\n\t-n: {args.ngen}\n\t-o: {args.output}\n\t--seed: {args.seed}"
+            f"\tMode: Dataset Generation\n\t--struct: {args.struct}\n\t-n: {args.ngen}\n\t-o: {args.output}\n\t--seed: {args.seed}"
         )
         generate_dataset(args)
     elif args.mode == "validation":
         print(
             f"\tMode: Validation Data Generation\n\t-i1: {args.input1}\n\t-i2: {args.input2}\n\t--input_size: {args.input_size}\n\t-b: {args.benchmark}"
         )
-        if "DeltaR2Pairwise" in args.benchmark:
-            generate_DeltaR2Pairwise_validation(
-                args.input1, args.input_size
-            )
-        if "InvariantMassSequential" in args.benchmark:
-            generate_InvariantMassSequential_validation(
-                args.input1, args.input2, args.input_size
-            )
-        # if "InvariantMassRandom" in args.benchmark:
-        #     pass
-        # generate_InvariantMassRandom_validation(args.input1, args.input2)
+        generate_validation(args)

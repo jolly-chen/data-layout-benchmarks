@@ -10,7 +10,7 @@
 #include <ranges>
 
 struct FileOpts {
-  std::string input = "";      // Option "--input <string>"
+  std::vector<std::string> inputs; // Option "--input [<struct>=]<string>", may be repeated
   std::string validation = ""; // Option "--validation <string>"
 };
 
@@ -40,6 +40,19 @@ public:
     }
     static const std::string empty_string("");
     return empty_string;
+  }
+  /* Look up every occurrence of an option and return their values, marking
+     them as consumed. */
+  std::vector<std::string> GetCmdOptions(const std::string &option) {
+    std::vector<std::string> values;
+    for (auto itr = this->tokens.cbegin(); itr != this->tokens.cend(); ++itr) {
+      if (*itr == option && std::next(itr) != this->tokens.cend()) {
+        MarkConsumed(itr);
+        MarkConsumed(++itr);
+        values.push_back(*itr);
+      }
+    }
+    return values;
   }
   /// @author iain
   bool CmdOptionExists(const std::string &option) {
