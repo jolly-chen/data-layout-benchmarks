@@ -3,30 +3,30 @@
 This benchmark suite enables systematic studies on the performance impact of different data layouts of an array of a (complex) data structure.
 
 ## Overview
-The benchmark suite consists of 4 main parts:
+The benchmark suite consists of 4 main parts, which only interact through small interfaces, so each can be replaced independently:
 1. A **set of benchmark kernels** that perform computations on a data structure (`benchmarks.h`).
 2. A **data layout generator** that generates different data layouts for a data structure given by a data specification (`layouts/`).
 3. An **input parser** that reads datasets into any data structure, matching CSV columns to data members by name (`datasets.h`).
-4. A **main** file that calls the benchmarks with the generated data structures (`main.cpp`).
+4. A **benchmark driver** that runs every kernel on every generated layout of the data structure the kernel works on (`main.cpp`).
 
 For an array of a data structure with N data members, the data layout generator generates all possible data layouts by permuting the order of the data members and grouping them into arrays. The total number of generated layouts, $N_n$ is given by the recursive formula: $N_n = 2 \cdot (n-1) \cdot N_{n-1} - (n-1)\cdot(n-2)\cdot N_{n-2}$ with $N_0 = N_1 = 1$.
 
-The main file runs the benchmarks kernels for each generated data layout. By default, the kernels are run with two sizes of the input arrays: (1) smaller than L1 cache size and (2) larger than L3 cache size. The results are reported by [google benchmark](https://github.com/google/benchmark), on the console or, e.g., as JSON with `--benchmark_format=json`. `plot_results.py` contains plotting functions for an earlier CSV format of the results.
+The driver finds the generated layouts by reflection, so it needs no changes when layouts or data structures are added. By default, each kernel runs with two problem sizes per layout: one where its input and output containers fit in the L1 cache, and one where they take up twice the last-level cache. The sizes are chosen in bytes, so all layouts of a kernel use the same amount of memory; the number of elements can differ between layouts because of the alignment padding of each partition. Results are written by [google benchmark](https://github.com/google/benchmark), e.g., as JSON with `--benchmark_format=json`.
 
 ## File Descriptions
-- (1) `benchmarks.h`: Contains  a set of kernels that perform computations on a particle data structure, representing common operations in high-energy physics.
+- (1) `benchmarks.h`: Contains a set of kernels that perform computations on a particle data structure, representing common operations in high-energy physics, and one *benchmark descriptor* per kernel (namespace `bench`) that tells the driver how to set up, run and validate it. `bench::AllKernels` lists the benchmarks the driver runs.
 - (2) `layouts/`: the data layout generator.
   - `generate_datastructures.py`
     - *input \<data spec file\>*: a file that specifies the data structure, with on the first line the structure's name and on each following line the type and name of a field in the data structure. See `layouts/specs/particle.spec` for an example.
     - *output* `layouts/generated/layouts_<Struct>.h`: the data structure, and one container per data layout in namespace `layouts::<Struct>`. Headers for several data structures can exist side by side.
     - *output* `layouts/generated/layouts_index.h`: includes every `layouts_<Struct>.h` in `layouts/generated/`. It is included by `main.cpp`. Delete a `layouts_<Struct>.h` and rerun the generator to drop a data structure.
     - *output* `layouts/generated/test.h`: the containers used by `test.cpp`.
-  - `layout_helpers.h`: the helpers used by the generated containers; the `LayoutOf<C, T>` concept that every container must satisfy (any other layout implementation that satisfies it can be benchmarked too); and `ForEachLayout<T>(f)`, which calls `f` for every generated container of `T`. The driver uses `ForEachLayout` to find the layouts to run the benchmarks on.
+  - `layout_helpers.h`: the helpers used by the generated containers; the `LayoutOf<C, T>` concept that every container must satisfy (any other layout implementation that satisfies it can be benchmarked too); and `ForEachLayout<T>(f)`, which calls `f` for every generated container of `T`. The driver uses `ForEachLayout` to find the layouts a kernel runs on.
   - `specs/`: data specifications.
 - (3) `datasets.h`: reads CSV datasets into `std::vector<T>` for any data structure `T`, using reflection to map the columns in the header row to data members.
-- (4) `main.cpp`: The main file that reads the input data with `datasets.h`, and calls the benchmarks for every generated layout of `Particle`, which it finds with `ForEachLayout`.
-  - *output*: one google benchmark result per benchmark, layout and problem size, named `<benchmark>_<layout>`, with the counters `problem_size` (array size in elements) and `reference_size` (size of the proxy reference returned by the container).
-- `plot_results.py`: A script that contains several methods to plot the results of the benchmarks as a scatter plot or histogram.
+- (4) `main.cpp`: The driver that reads the input data, registers every benchmark in `bench::AllKernels` for every generated layout of its data structure, runs them, and validates the results.
+  - *output*: one result per benchmark, layout and problem size. Its name is `<benchmark>_<layout>`, e.g., `InvariantMassSequential_PartitionedContainer0123456`, and its counters are `problem_size` (elements), `bytes_for_all` (bytes of all input and output containers), `target_bytes` (the cache-based size it was chosen for), and with `--validation`, `validated` (1 = matches the validation data, -1 = does not, 0 = no validation data for this size).
+- `plot_results.py`: A script that contains several methods to plot the results of the benchmarks as a scatter plot or histogram. It reads an earlier CSV format of the results.
 
 Miscellaneous:
 - `generate_dataset.py`: generates input datasets (with a header row) and validation data for the benchmarks. See `--help` for more options on how to run the dataset generator. Generating validation data needs [ROOT](https://root.cern) with Python bindings; the reference implementations are in `validation/`, one module per kernel.
@@ -53,7 +53,7 @@ python3 layouts/generate_datastructures.py --data_spec layouts/specs/particle.sp
 make
 likwid-pin -C <core_num> ./main --input <input list file> [--validation <validation list file>] [google benchmark options]
 ```
-Run `layouts/generate_datastructures.py --help` for more options on how to run the data structure generator. Run `./main --help` for more options on how to run the benchmarks.
+Run `layouts/generate_datastructures.py --help` for more options on how to run the data structure generator. Run `./main --help` for more options on how to run the benchmarks. All other options are passed to google benchmark, e.g., `--benchmark_filter`, `--benchmark_repetitions` and `--benchmark_perf_counters` to gather hardware performance counters (this needs google benchmark built with `-DBENCHMARK_ENABLE_LIBPFM=ON` and [libpfm4](https://perfmon2.sourceforge.net/)); see its [user guide](https://github.com/google/benchmark/blob/main/docs/user_guide.md).
 
 #### Input data
 `--input` takes a *list file* with the path of one dataset per line; relative paths are relative to the directory of the list file. A benchmark that reads two arrays (e.g., `InvariantMassSequential`) reads the first dataset into its first container and the second into its second. Each dataset is a CSV file:
@@ -68,7 +68,7 @@ The datasets can be generated using `generate_dataset.py dataset` or downloaded 
 - https://cernbox.cern.ch/remote.php/dav/public-files/qqvSQoyp3Y4VFff/10.zip (10 particles)
 
 #### Validation data
-`--validation` takes a list file with lines `<benchmark>,<input size>,<validation file>`; the validation files can be generated with `generate_dataset.py validation`. A benchmark is validated if there is validation data for its exact input size.
+`--validation` takes a list file with lines `<benchmark>,<input size>,<validation file>`, where relative paths are relative to the directory of the list file; `main` reads all validation files before running any benchmark and reports missing or malformed ones. The validation files can be generated with `generate_dataset.py validation`. Since the problem size can differ between layouts, validation data for a larger input size is also used for smaller ones for benchmarks whose result `i` only depends on element `i` (`InvariantMassSequential`, and `InvariantMassRandom`, which is validated against the `InvariantMassSequential` data). `DeltaR2Pairwise` (not registered by default) needs validation data for the exact input size.
 
 We recommend pinning the benchmarks to a specific core using `likwid-pin` to avoid interference from other processes and to ensure that the benchmarks are run on the same core for all data layouts.
 
@@ -84,10 +84,13 @@ Layouts are in the format of e.g., `0123456` for an AoS of a data structure with
 The benchmark suite is intended to be easily modifiable to allow for different benchmarks and data structures. Here are some guidelines on how to modify the benchmark suite:
 
 ### Adding a new kernel
-To add a new kernel, add a new function to `benchmarks.h` that performs the desired computation on the data structure. Then, add a call to the new benchmark in `main.cpp` in the function `RunAllBenchmarks`.
+1. Add the kernel to namespace `kernels` in `benchmarks.h` (or a header of its own, included by `benchmarks.h`). Write it as a template over the container type and access elements as `v[i].<member>`, so it compiles for every layout.
+2. Add a benchmark descriptor to namespace `bench`: a struct that satisfies the concepts `bench::BenchmarkDescriptor` and `bench::BenchmarkFor` in `benchmarks.h`, which document each member it needs. See `bench::InvariantMassSequential` for an example. `value_type` selects the data structure whose layouts the kernel runs on, and `bytes_for_all` the memory it uses, from which the problem sizes are chosen.
+3. Add the descriptor to `bench::AllKernels`.
 
-### Changing the data structure
-To change the data structure:
+`main.cpp` does not need to change.
+
+### Adding a data structure
 1. Create a new data specification file in `layouts/specs/`.
-2. Run `python3 layouts/generate_datastructures.py --data_spec layouts/specs/<file>`. This writes `layouts/generated/layouts_<Struct>.h` next to the headers of the other data structures, and updates `layouts_index.h`. You can check `layouts_<Struct>.h` to verify that the new data structures have been generated as expected.
-3. If needed, modify the benchmark kernels in `benchmarks.h` and the benchmarks in `main.cpp` to work with the new data structure. For example, if the new data structure has different field names or types, you will need to update the kernels accordingly.
+2. Run `python3 layouts/generate_datastructures.py --data_spec layouts/specs/<file>`. This writes `layouts/generated/layouts_<Struct>.h` next to the headers of the other data structures, and updates `layouts_index.h`.
+3. Add kernels with `value_type = <Struct>` (see above), and give their datasets with `--input <Struct>=<list file>`.

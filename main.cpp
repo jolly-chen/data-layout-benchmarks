@@ -7,7 +7,8 @@
 #include "utils.h"
 
 #include <algorithm>
-#include <random>
+#include <map>
+#include <meta>
 
 #include <likwid.h>
 
@@ -27,85 +28,118 @@ std::vector<ValidationInfo> validation_data;
 
 size_t Alignment = 64; // Default alignment, will be set based on CPU topology
 
-/* Parse validation info from the given CSV file. */
-void ParseValidationInfo(const std::string filename) {
+// Problem sizes are chosen so that the input and output containers of a
+// benchmark take up this many bytes, as a multiple of the cache size:
+constexpr double SmallTargetL1Factor = 1.0;  // fits in the L1 cache
+constexpr double LargeTargetLLCFactor = 2.0; // does not fit in any cache
+
+/* Read validation data from the given file, caching it for later calls. */
+const std::vector<double> &ReadValidationData(const std::string &filename) {
+  static std::map<std::string, std::vector<double>> cache;
+  if (auto it = cache.find(filename); it != cache.end()) { return it->second; }
+
   std::ifstream is(filename);
-  if (is.is_open()) {
-    std::string line;
-    while (getline(is, line)) {
-      std::stringstream ss(line);
-      std::string token;
-      ValidationInfo info;
-
-      getline(ss, token, ',');
-      info.benchmark_name = token;
-      getline(ss, token, ',');
-      info.input_size = std::stoul(token);
-      getline(ss, token, ',');
-      info.validation_file = token;
-
-      validation_data.push_back(info);
-    }
-    is.close();
-  } else {
-    throw std::runtime_error("Failed to open validation file " + filename +
-                             " for reading");
+  if (!is.is_open()) {
+    throw std::runtime_error("Failed to open file " + filename + " for reading");
   }
-}
-
-/* Read validation data from the given file into the container. */
-std::vector<double> ReadValidationData(const std::string filename) {
   std::vector<double> data;
-
-  std::ifstream is(filename);
-  if (is.is_open()) {
-    std::string line;
-    while (getline(is, line)) {
-      data.push_back(std::stod(line));
+  size_t line_num = 0;
+  for (std::string line; getline(is, line);) {
+    ++line_num;
+    auto token = datasets_detail::Trim(line);
+    if (token.empty()) { continue; }
+    double value;
+    auto [end, ec] = std::from_chars(token.data(), token.data() + token.size(), value);
+    if (ec != std::errc{} || end != token.data() + token.size()) {
+      throw std::runtime_error(std::format("Line {} of {}: '{}' is not a valid value", line_num, filename, token));
     }
-  } else {
-    throw std::runtime_error("Failed to open file " + filename +
-                             " for reading");
+    data.push_back(value);
   }
 
-  return data;
+  return cache.emplace(filename, std::move(data)).first->second;
 }
 
-/* Validate results if a validation file is provided. */
-void ValidateResults(const std::string_view benchmark_name,
-                     const std::vector<double> &results, const size_t in_size) {
-  if (!validation_data.empty()) {
-    auto validation_file =
-        std::ranges::find_if(validation_data, [=](const ValidationInfo &info) {
-          return info.benchmark_name == benchmark_name &&
-                 info.input_size == in_size;
-        });
+/* Parse validation info from the given CSV file, with one
+ * "<benchmark>,<input size>,<validation file>" line per benchmark, and read
+ * the validation data, so a missing file is reported before any benchmark
+ * runs. Relative paths are relative to the directory of the CSV file. */
+void ParseValidationInfo(const std::string &filename) {
+  std::ifstream is(filename);
+  if (!is.is_open()) {
+    throw std::runtime_error("Failed to open validation file " + filename + " for reading");
+  }
 
-    if (validation_file != validation_data.end()) {
-      auto expected_results =
-          ReadValidationData(validation_file->validation_file);
-      if (expected_results.size() < results.size()) {
-        std::fprintf(stderr,
-                     "\033[1;31mVALIDATION FAILED\033[0m for benchmark %s with "
-                     "input size %zu: %s has %zu values, expected at least %zu\n",
-                     benchmark_name.data(), in_size,
-                     validation_file->validation_file.c_str(),
-                     expected_results.size(), results.size());
-        return;
-      }
-      for (size_t j = 0; j < results.size(); ++j) {
-        if (std::abs(results[j] - expected_results[j]) > 1e-6) {
-          std::fprintf(
-              stderr,
-              "\033[1;31mVALIDATION FAILED\033[0m for benchmark %s with input "
-              "size %zu at index %zu: expected %f, got %f\n",
-              benchmark_name.data(), in_size, j, expected_results[j],
-              results[j]);
-          break;
-        }
-      }
+  const auto dir = std::filesystem::path(filename).parent_path();
+  size_t line_num = 0;
+  for (std::string line; getline(is, line);) {
+    ++line_num;
+    if (datasets_detail::Trim(line).empty()) { continue; }
+
+    auto tokens = datasets_detail::SplitCsvLine(line);
+    size_t input_size = 0;
+    bool valid = tokens.size() == 3 && !tokens[0].empty() && !tokens[2].empty();
+    if (valid) {
+      auto [end, ec] = std::from_chars(tokens[1].data(), tokens[1].data() + tokens[1].size(), input_size);
+      valid = ec == std::errc{} && end == tokens[1].data() + tokens[1].size();
+    }
+    if (!valid) {
+      throw std::runtime_error(std::format(
+          "Line {} of {} is not of the form <benchmark>,<input size>,<validation file>: '{}'",
+          line_num, filename, datasets_detail::Trim(line)));
+    }
+
+    std::filesystem::path path(tokens[2]);
+    ValidationInfo info{std::string(tokens[0]), input_size,
+                        (path.is_relative() ? dir / path : path).string()};
+    ReadValidationData(info.validation_file);
+    validation_data.push_back(std::move(info));
+  }
+}
+
+/* Validate results if a validation file is provided. A file for exactly
+ * in_size is preferred; if allow_prefix is set, the file for the smallest
+ * larger input size is used otherwise, comparing its first results.size()
+ * values. Returns 1 if the results match, -1 if they do not, and 0 if there is
+ * no validation file for this benchmark and size. */
+int ValidateResults(const std::string_view benchmark_name,
+                    std::span<const double> results, const size_t in_size,
+                    bool allow_prefix) {
+  const ValidationInfo *match = nullptr;
+  for (const auto &info : validation_data) {
+    if (info.benchmark_name != benchmark_name) { continue; }
+    if (info.input_size == in_size) {
+      match = &info;
+      break;
+    }
+    if (allow_prefix && info.input_size > in_size &&
+        (!match || info.input_size < match->input_size)) {
+      match = &info;
     }
   }
+  if (!match) { return 0; }
+
+  const auto &expected_results = ReadValidationData(match->validation_file);
+  if (expected_results.size() < results.size()) {
+    std::fprintf(stderr,
+                 "\033[1;31mVALIDATION FAILED\033[0m for benchmark %s with input "
+                 "size %zu: %s has %zu values, expected at least %zu\n",
+                 benchmark_name.data(), in_size, match->validation_file.c_str(),
+                 expected_results.size(), results.size());
+    return -1;
+  }
+  for (size_t j = 0; j < results.size(); ++j) {
+    // Written so that NaN results fail too
+    if (!(std::abs(results[j] - expected_results[j]) <= 1e-6)) {
+      std::fprintf(
+          stderr,
+          "\033[1;31mVALIDATION FAILED\033[0m for benchmark %s with input "
+          "size %zu at index %zu: expected %f, got %f\n",
+          benchmark_name.data(), in_size, j, expected_results[j],
+          results[j]);
+      return -1;
+    }
+  }
+  return 1;
 }
 
 // /* Parse command-line options.
@@ -158,86 +192,45 @@ void ParseOptions(int &argc, char **argv) {
   benchmark::AddCustomContext("validation", opts.validation);
 }
 
-template <class Container>
-void BM_InvariantMassSequential(benchmark::State &state, size_t n) {
-  const auto &input_data = datasets.Get<Particle>();
-  Container v1(n, Alignment), v2(n, Alignment);
-  for (size_t i = 0; i < n; ++i) {
-    v1[i].pt = input_data[0][i].pt;
-    v1[i].eta = input_data[0][i].eta;
-    v1[i].phi = input_data[0][i].phi;
-    v1[i].e = input_data[0][i].e;
-    v2[i].pt = input_data[1][i].pt;
-    v2[i].eta = input_data[1][i].eta;
-    v2[i].phi = input_data[1][i].phi;
-    v2[i].e = input_data[1][i].e;
-  }
-  std::vector<double> results(n);
+/* Run benchmark K on a container with layout C and n elements. */
+template <class K, class C>
+  requires bench::BenchmarkFor<K, C>
+void BM_Generic(benchmark::State &state, size_t n, size_t target_bytes) {
+  typename K::template Setup<C> s(n, Alignment, datasets);
 
   for (auto _ : state) {
-    kernels::InvariantMassSequential(v1, v2, results);
-    benchmark::DoNotOptimize(results);
+    K::run(s);
+    benchmark::DoNotOptimize(s);
     benchmark::ClobberMemory();
   }
 
   if (!opts.validation.empty()) {
-    ValidateResults("InvariantMassSequential", results, n);
-    benchmark::DoNotOptimize(results);
-    benchmark::ClobberMemory();
+    state.counters["validated"] = ValidateResults(K::validation_name, K::output(s), n, K::validate_prefix);
   }
 
   state.counters["problem_size"] = n;
-  state.counters["reference_size"] = sizeof(v1[0]);
+  state.counters["bytes_for_all"] = K::template bytes_for_all<C>(n, Alignment);
+  state.counters["target_bytes"] = target_bytes;
 }
 
-template <class Container>
-void BM_InvariantMassRandom(benchmark::State &state, size_t n) {
-  const auto &input_data = datasets.Get<Particle>();
-  Container v1(n, Alignment), v2(n, Alignment);
-  for (size_t i = 0; i < n; ++i) {
-    v1[i].pt = input_data[0][i].pt;
-    v1[i].eta = input_data[0][i].eta;
-    v1[i].phi = input_data[0][i].phi;
-    v1[i].e = input_data[0][i].e;
-    v2[i].pt = input_data[1][i].pt;
-    v2[i].eta = input_data[1][i].eta;
-    v2[i].phi = input_data[1][i].phi;
-    v2[i].e = input_data[1][i].e;
-  }
-  std::vector<double> results(n);
-
-  std::vector<size_t> indices(n);
-  std::iota(begin(indices), end(indices), 0);
-  std::mt19937 rng(std::chrono::system_clock::now().time_since_epoch().count());
-  std::shuffle(begin(indices), end(indices), rng);
-
-  for (auto _ : state) {
-    kernels::InvariantMassRandom(v1, v2, results, indices);
-    benchmark::DoNotOptimize(results);
-    benchmark::ClobberMemory();
-  }
-
-  if (!opts.validation.empty()) {
-    ValidateResults("InvariantMassRandom", results, n);
-    benchmark::DoNotOptimize(results);
-    benchmark::ClobberMemory();
-  }
-
-  state.counters["problem_size"] = n;
-  state.counters["reference_size"] = sizeof(v1[0]);
+/* Register benchmark K for every generated layout of K::value_type and every
+ * target size, and reserve the input data it needs. */
+template <bench::BenchmarkDescriptor K>
+void Register(const std::vector<size_t> &target_bytes) {
+  ForEachLayout<typename K::value_type>([&]<class C>() {
+    static_assert(bench::BenchmarkFor<K, C>, "benchmark descriptor does not support this layout");
+    for (size_t target : target_bytes) {
+      const size_t n = bench::ProblemSize<K, C>(target, Alignment);
+      datasets.Reserve<typename K::value_type>(n, K::num_inputs);
+      benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_Generic<K, C>, n, target)
+          ->Unit(benchmark::kMillisecond);
+    }
+  });
 }
 
-/* Run all benchmarks defined in benchmarks.h. */
-template <typename Container>
-void RunAllBenchmarks(size_t n) {
-  // Register benchmarks for a specific problem size
-  benchmark::RegisterBenchmark("BM_InvariantMassSequential", BM_InvariantMassSequential<Container>, n)
-    ->Unit(benchmark::kMillisecond)
-    ->Name(std::string("InvariantMassSequential_") + std::string(Container::to_string()));
-
-  benchmark::RegisterBenchmark("BM_InvariantMassRandom", BM_InvariantMassRandom<Container>, n)
-    ->Unit(benchmark::kMillisecond)
-    ->Name(std::string("InvariantMassRandom_") + std::string(Container::to_string()));
+template <bench::BenchmarkDescriptor... K>
+void RegisterAll(std::tuple<K...> *, const std::vector<size_t> &target_bytes) {
+  (Register<K>(target_bytes), ...);
 }
 
 int main(int argc, char **argv) {
@@ -252,14 +245,12 @@ int main(int argc, char **argv) {
   }
   CpuTopology_t topo = get_cpuTopology();
 
-  std::vector<size_t> problem_sizes;
-  problem_sizes.push_back(topo->cacheLevels[0].size / sizeof(Particle) /
-                          3); // Fits in L1 Cache
-  problem_sizes.push_back(topo->cacheLevels[topo->numCacheLevels - 1].size /
-                          sizeof(Particle) / 2); // Does not fit in any cache
+  const std::vector<size_t> target_bytes = {
+      static_cast<size_t>(SmallTargetL1Factor * topo->cacheLevels[0].size),
+      static_cast<size_t>(LargeTargetLLCFactor * topo->cacheLevels[topo->numCacheLevels - 1].size)};
   Alignment = topo->cacheLevels[0].lineSize;
 
-  // Get input data: the benchmarks read the first two Particle datasets
+  // Get input data
   if (opts.inputs.empty()) {
     std::cerr << "No input data specified. Exiting." << std::endl;
     return EXIT_FAILURE;
@@ -271,26 +262,28 @@ int main(int argc, char **argv) {
       datasets.SetDefaultListFile(input);
     }
   }
-  datasets.Reserve<Particle>(*std::ranges::max_element(problem_sizes), 2);
+
+  // Read validation data if provided
+  if (!opts.validation.empty()) {
+    try {
+      ParseValidationInfo(opts.validation);
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      return EXIT_FAILURE;
+    }
+  }
+
+  benchmark::Initialize(&argc, argv);
+  if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
+  //////////////////////////////////////////////////////////////////////////
+
+  RegisterAll(static_cast<bench::AllKernels *>(nullptr), target_bytes);
+
   try {
     datasets.Load();
   } catch (const std::exception &e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;
-  }
-
-  // Read validation data if provided
-  if (!opts.validation.empty()) {
-    ParseValidationInfo(opts.validation);
-  }
-  
-  benchmark::Initialize(&argc, argv);
-  if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
-  //////////////////////////////////////////////////////////////////////////
-
-  // Register the benchmarks for every generated layout of Particle
-  for (auto &size : problem_sizes) {
-    ForEachLayout<Particle>([&]<class C>() { RunAllBenchmarks<C>(size); });
   }
 
   benchmark::RunSpecifiedBenchmarks();

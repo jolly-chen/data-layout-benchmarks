@@ -1,10 +1,21 @@
 #ifndef BENCHMARKS_H
 #define BENCHMARKS_H
 
+#include "datasets.h"
+#include "layout_helpers.h"
+#include "layouts_Particle.h"
+
+#include <algorithm>
 #include <cassert>
+#include <concepts>
 #include <cmath>
 #include <iostream>
+#include <numeric>
+#include <random>
 #include <span>
+#include <string_view>
+#include <tuple>
+#include <vector>
 
 
 template <typename T>
@@ -117,4 +128,185 @@ inline void DeltaR2Pairwise(const T &v, std::span<double> results) {
 
 } // namespace kernels
 
-#endif
+/* Benchmark descriptors: everything the driver in main.cpp needs to know to
+ * run a kernel on any layout of its element type. To add a kernel, write a
+ * struct that satisfies BenchmarkDescriptor (and BenchmarkFor for the layouts
+ * of its value_type), and add it to AllKernels. */
+namespace bench {
+
+/* The members of a benchmark descriptor K that do not depend on the layout. */
+template <class K>
+concept BenchmarkDescriptor = requires {
+  // Element type; the kernel runs on every container C with LayoutOf<C, value_type>
+  typename K::value_type;
+  // Benchmark name, also the key for validation data
+  { K::name } -> std::convertible_to<std::string_view>;
+  // Name of the validation data to compare the results against
+  { K::validation_name } -> std::convertible_to<std::string_view>;
+  // True if result i only depends on element i, so validation data for a
+  // larger input size also validates a smaller one
+  { K::validate_prefix } -> std::convertible_to<bool>;
+  // Number of datasets of value_type it reads
+  { K::num_inputs } -> std::convertible_to<size_t>;
+};
+
+/* The members of a benchmark descriptor K for a layout C of its value_type. */
+template <class K, class C>
+concept BenchmarkFor =
+    BenchmarkDescriptor<K> && LayoutOf<C, typename K::value_type> &&
+    // Containers and buffers for layout C, set up outside the timed loop from
+    // (n, alignment, datasets)
+    std::constructible_from<typename K::template Setup<C>, size_t, size_t, const Datasets &> &&
+    requires(typename K::template Setup<C> &s, size_t n) {
+      // Bytes of all input and output containers for n elements; problem
+      // sizes are chosen from this
+      { K::template bytes_for_all<C>(n, n) } -> std::convertible_to<size_t>;
+      // The timed part
+      K::run(s);
+      // Results to validate, in input order
+      { K::output(s) } -> std::convertible_to<std::span<const double>>;
+    };
+
+/* Largest number of elements for which the containers of K with layout C take
+ * up at most target_bytes. */
+template <class K, class C>
+  requires BenchmarkFor<K, C>
+size_t ProblemSize(size_t target_bytes, size_t alignment) {
+  size_t lo = 0, hi = target_bytes; // every element takes at least one byte
+  while (lo < hi) {
+    size_t mid = lo + (hi - lo + 1) / 2;
+    if (K::template bytes_for_all<C>(mid, alignment) <= target_bytes) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return lo;
+}
+
+/* Copy the first c.size() elements of src into c. */
+template <class C, class T>
+void Fill(C &c, const std::vector<T> &src) {
+  for (size_t i = 0; i < c.size(); ++i) {
+    c[i] = src[i];
+  }
+}
+
+struct InvariantMassSequential {
+  using value_type = Particle;
+  static constexpr std::string_view name = "InvariantMassSequential";
+  static constexpr std::string_view validation_name = name;
+  static constexpr bool validate_prefix = true;
+  static constexpr size_t num_inputs = 2;
+
+  template <class C>
+  static size_t bytes_for_all(size_t n, size_t alignment) {
+    return 2 * C::bytes_for_all(n, alignment) + n * sizeof(double);
+  }
+
+  template <LayoutOf<Particle> C>
+  struct Setup {
+    C v1, v2;
+    std::vector<double> results;
+
+    Setup(size_t n, size_t alignment, const Datasets &d) : v1(n, alignment), v2(n, alignment), results(n) {
+      Fill(v1, d.Get<Particle>()[0]);
+      Fill(v2, d.Get<Particle>()[1]);
+    }
+  };
+
+  template <class C>
+  static void run(Setup<C> &s) { kernels::InvariantMassSequential(s.v1, s.v2, s.results); }
+
+  template <class C>
+  static std::span<const double> output(Setup<C> &s) { return s.results; }
+};
+
+struct InvariantMassRandom {
+  using value_type = Particle;
+  static constexpr std::string_view name = "InvariantMassRandom";
+  // output() undoes the shuffle, so the results match the sequential ones
+  static constexpr std::string_view validation_name = InvariantMassSequential::name;
+  static constexpr bool validate_prefix = true;
+  static constexpr size_t num_inputs = 2;
+  // Fixed, so every layout and every run visits the elements in the same order
+  static constexpr std::mt19937::result_type seed = 42;
+
+  template <class C>
+  static size_t bytes_for_all(size_t n, size_t alignment) {
+    return 2 * C::bytes_for_all(n, alignment) + n * sizeof(double) + n * sizeof(size_t);
+  }
+
+  template <LayoutOf<Particle> C>
+  struct Setup {
+    C v1, v2;
+    std::vector<double> results;
+    std::vector<size_t> indices;
+    std::vector<double> ordered_results;
+
+    Setup(size_t n, size_t alignment, const Datasets &d)
+        : v1(n, alignment), v2(n, alignment), results(n), indices(n) {
+      Fill(v1, d.Get<Particle>()[0]);
+      Fill(v2, d.Get<Particle>()[1]);
+
+      std::iota(begin(indices), end(indices), 0);
+      std::mt19937 rng(seed);
+      std::shuffle(begin(indices), end(indices), rng);
+    }
+  };
+
+  template <class C>
+  static void run(Setup<C> &s) { kernels::InvariantMassRandom(s.v1, s.v2, s.results, s.indices); }
+
+  template <class C>
+  static std::span<const double> output(Setup<C> &s) {
+    s.ordered_results.resize(s.results.size());
+    for (size_t i = 0; i < s.results.size(); ++i) {
+      s.ordered_results[s.indices[i]] = s.results[i];
+    }
+    return s.ordered_results;
+  }
+};
+
+struct DeltaR2Pairwise {
+  using value_type = Particle;
+  static constexpr std::string_view name = "DeltaR2Pairwise";
+  static constexpr std::string_view validation_name = name;
+  static constexpr bool validate_prefix = false;
+  static constexpr size_t num_inputs = 1;
+
+  /* Number of pairs the kernel computes for n elements. */
+  static constexpr size_t num_results(size_t n) {
+    const size_t m = std::min(kernels::deltar2_max_outer_size, n);
+    return m * (n - 1) - m * (m - 1) / 2;
+  }
+
+  template <class C>
+  static size_t bytes_for_all(size_t n, size_t alignment) {
+    return C::bytes_for_all(n, alignment) + num_results(n) * sizeof(double);
+  }
+
+  template <LayoutOf<Particle> C>
+  struct Setup {
+    C v;
+    std::vector<double> results;
+
+    Setup(size_t n, size_t alignment, const Datasets &d) : v(n, alignment), results(num_results(n)) {
+      Fill(v, d.Get<Particle>()[0]);
+    }
+  };
+
+  template <class C>
+  static void run(Setup<C> &s) { kernels::DeltaR2Pairwise(s.v, s.results); }
+
+  template <class C>
+  static std::span<const double> output(Setup<C> &s) { return s.results; }
+};
+
+/* The benchmarks main.cpp registers. DeltaR2Pairwise is not registered, but
+ * can be added here. */
+using AllKernels = std::tuple<InvariantMassSequential, InvariantMassRandom>;
+
+} // namespace bench
+
+#endif // BENCHMARKS_H
