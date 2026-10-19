@@ -8,11 +8,6 @@ add_compile_options(-O3 -Wall -Wextra -march=native -freflection)
 
 # Find LIKWID
 find_package(likwid CONFIG REQUIRED COMPONENTS marker)
-include_directories(${LIKWID_INCLUDE_DIRS}) # if not set in likwid-config.cmake
-link_libraries(likwid::likwid)
-
-# Helpers and the containers written by layouts/generate_datastructures.py
-include_directories(include layouts layouts/generated)
 
 if (vec)
     message(STATUS "Enabling vectorization flags")
@@ -22,8 +17,25 @@ else()
     add_compile_options(-fno-tree-vectorize -fno-fast-math)
 endif()
 
-add_executable(test test.cpp)
-
 find_package(benchmark REQUIRED)
-add_executable(main main.cpp)
-target_link_libraries(main PUBLIC benchmark::benchmark)
+
+# The benchmark driver: main.cpp, built with the layouts generated into
+# layouts_dir. Pass KERNELS_HEADER/KERNELS as compile definitions to benchmark
+# other kernels than bench::AllKernels.
+function(add_benchmark_driver target layouts_dir)
+    add_executable(${target} ${PROJECT_SOURCE_DIR}/main.cpp)
+    target_include_directories(${target} BEFORE PRIVATE ${layouts_dir})
+    target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/layouts
+                               ${LIKWID_INCLUDE_DIRS})
+    target_link_libraries(${target} PUBLIC benchmark::benchmark likwid::likwid)
+endfunction()
+
+add_benchmark_driver(main ${PROJECT_SOURCE_DIR}/layouts/generated)
+
+# Tests of the framework itself, run with ctest. They generate their own
+# layouts into the build directory.
+option(BUILD_TESTS "Build the tests in tests/" OFF)
+if (BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

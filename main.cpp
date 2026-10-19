@@ -6,6 +6,16 @@
 #include "layouts_index.h"
 #include "utils.h"
 
+// The benchmarks to register. Define KERNELS (and KERNELS_HEADER, the header
+// that declares them) when compiling to benchmark another set of kernels, as
+// tests/plugin does.
+#ifdef KERNELS_HEADER
+#include KERNELS_HEADER
+#endif
+#ifndef KERNELS
+#define KERNELS bench::AllKernels
+#endif
+
 #include <algorithm>
 #include <map>
 #include <meta>
@@ -32,6 +42,8 @@ size_t Alignment = 64; // Default alignment, will be set based on CPU topology
 // benchmark take up this many bytes, as a multiple of the cache size:
 constexpr double SmallTargetL1Factor = 1.0;  // fits in the L1 cache
 constexpr double LargeTargetLLCFactor = 2.0; // does not fit in any cache
+// Compile with -DTARGET_BYTES=<bytes>,<bytes>,... to use fixed targets instead,
+// e.g., for tests that need the same problem sizes on every machine.
 
 /* Read validation data from the given file, caching it for later calls. */
 const std::vector<double> &ReadValidationData(const std::string &filename) {
@@ -245,9 +257,13 @@ int main(int argc, char **argv) {
   }
   CpuTopology_t topo = get_cpuTopology();
 
+#ifdef TARGET_BYTES
+  const std::vector<size_t> target_bytes = {TARGET_BYTES};
+#else
   const std::vector<size_t> target_bytes = {
       static_cast<size_t>(SmallTargetL1Factor * topo->cacheLevels[0].size),
       static_cast<size_t>(LargeTargetLLCFactor * topo->cacheLevels[topo->numCacheLevels - 1].size)};
+#endif
   Alignment = topo->cacheLevels[0].lineSize;
 
   // Get input data
@@ -277,7 +293,7 @@ int main(int argc, char **argv) {
   if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
   //////////////////////////////////////////////////////////////////////////
 
-  RegisterAll(static_cast<bench::AllKernels *>(nullptr), target_bytes);
+  RegisterAll(static_cast<KERNELS *>(nullptr), target_bytes);
 
   try {
     datasets.Load();

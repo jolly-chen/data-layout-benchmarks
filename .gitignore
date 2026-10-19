@@ -42,3 +42,21 @@
 
 # Headers written by layouts/generate_datastructures.py
 layouts/generated/
+
+# CMake build outputs (the presets build in the source directory)
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+CTestTestfile.cmake
+/main
+# Test build outputs (tests/CMakeLists.txt)
+tests/layouts/
+tests/plugin_layouts/
+tests/plugin_data/
+tests/main_plugin
+tests/test_layouts
+tests/test_framework
+tests/test_plugin
+Testing/
+DartConfiguration.tcl

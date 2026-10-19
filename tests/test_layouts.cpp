@@ -9,7 +9,12 @@
 #include <string>
 #include <vector>
 
+// Tests that the containers emitted by layouts/generate_datastructures.py store
+// each partition contiguously and aligned, for the containers in test.h.
+
 using namespace layouts::S;
+
+int failures = 0;
 
 template <typename T> void VectorSum(const T &v1, const T &v2, const std::string &tname) {
   std::cout << "Running VectorSum test with " << tname << "..."<< std::endl;
@@ -35,6 +40,7 @@ template <typename T> void VectorSum(const T &v1, const T &v2, const std::string
   for (size_t i = 0; i < n; i++) {
     if (results[i] != i * 4) {
       std::cout << "\033[1;31mFAILED\033[0m\n";
+      ++failures;
       std::cerr << "\tError at index " << i << ": expected " << i * 4
                 << ", got " << results[i] << "\n";
       return;
@@ -61,6 +67,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
 
   if (x0_y0_diff != sizeof(double)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr
         << "\tNon-contiguous allocation detected between x[0] and y[0]: gap of "
         << x0_y0_diff << "\n";
@@ -69,6 +76,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
 
   if (y0_x1_diff != sizeof(double)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr
         << "\tNon-contiguous allocation detected between y[0] and x[1]: gap of "
         << y0_x1_diff << "\n";
@@ -77,6 +85,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
 
   if (z0_w0_diff != sizeof(float)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr
         << "\tNon-contiguous allocation detected between z[0] and w[0]: gap of "
         << z0_w0_diff << "\n";
@@ -85,6 +94,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
 
   if (w0_z1_diff != sizeof(float)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr
         << "\tNon-contiguous allocation detected between w[0] and z[1]: gap of "
         << w0_z1_diff << "\n";
@@ -97,6 +107,7 @@ template <typename T> void VerifyAllocation01_23(const T &p, const std::string &
   auto first_z = reinterpret_cast<char *>(&p[0].z);
   if (last_y != first_z) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr << "\tMembers are not allocated contiguously: end of first "
                  "partition is "
               << last_y << " and the start of second partition is " << first_z
@@ -124,6 +135,7 @@ template <typename T> void VerifyAllocation0_1_2_3(const T &p, const std::string
 
   if (x_diff != sizeof(int)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr << "\tElements of x are not : gap of " << x_diff
               << "\n";
     failed = true;
@@ -131,6 +143,7 @@ template <typename T> void VerifyAllocation0_1_2_3(const T &p, const std::string
 
   if (y_diff != sizeof(double)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr << "\tElements of y are not : gap of " << y_diff
               << "\n";
     failed = true;
@@ -138,6 +151,7 @@ template <typename T> void VerifyAllocation0_1_2_3(const T &p, const std::string
 
   if (z_diff != sizeof(float)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr << "\tElements of z are not : gap of " << z_diff
               << "\n";
     failed = true;
@@ -145,6 +159,7 @@ template <typename T> void VerifyAllocation0_1_2_3(const T &p, const std::string
 
   if (w_diff != sizeof(char)) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr << "\tElements of w are not : gap of " << w_diff
               << "\n";
     failed = true;
@@ -162,6 +177,7 @@ template <typename T> void VerifyAllocation0_1_2_3(const T &p, const std::string
   auto w_start = reinterpret_cast<char *>(&p[0].w);
   if (y_start != x_end || z_start != y_end || w_start != z_end) {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr << "\tMembers are not allocated ly. Partition "
                  "boundaries are:\n"
               << "\t\tx: [" << (long long)reinterpret_cast<char *>(&p[0].x)
@@ -209,6 +225,7 @@ template <typename T> void VerifyAlignment0_1_23(const T &p, const std::string &
     std::cout << "\033[1;32mPASSED\033[0m\n";
   } else {
     std::cout << "\033[1;31mFAILED\033[0m\n";
+    ++failures;
     std::cerr << "\tPartitions are not aligned to 64-byte boundaries:\n" << err;
   }
 }
@@ -233,4 +250,6 @@ int main() {
   using PyContainer0_1_23 = PartitionedContainer0_1_23;
   PyContainer0_1_23 p1_0_1_23(1000, alignment);
   VerifyAlignment0_1_23(p1_0_1_23, "PyContainer0_1_23");
+
+  return failures == 0 ? 0 : 1;
 }

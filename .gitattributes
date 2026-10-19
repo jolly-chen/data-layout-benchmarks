@@ -1,0 +1,2 @@
+# Keeps the CRLF line endings that the input parser test checks
+tests/data/parser/types.csv -text

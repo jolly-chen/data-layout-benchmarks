@@ -20,17 +20,16 @@ The driver finds the generated layouts by reflection, so it needs no changes whe
     - *input \<data spec file\>*: a file that specifies the data structure, with on the first line the structure's name and on each following line the type and name of a field in the data structure. See `layouts/specs/particle.spec` for an example.
     - *output* `layouts/generated/layouts_<Struct>.h`: the data structure, and one container per data layout in namespace `layouts::<Struct>`. Headers for several data structures can exist side by side.
     - *output* `layouts/generated/layouts_index.h`: includes every `layouts_<Struct>.h` in `layouts/generated/`. It is included by `main.cpp`. Delete a `layouts_<Struct>.h` and rerun the generator to drop a data structure.
-    - *output* `layouts/generated/test.h`: the containers used by `test.cpp`.
   - `layout_helpers.h`: the helpers used by the generated containers; the `LayoutOf<C, T>` concept that every container must satisfy (any other layout implementation that satisfies it can be benchmarked too); and `ForEachLayout<T>(f)`, which calls `f` for every generated container of `T`. The driver uses `ForEachLayout` to find the layouts a kernel runs on.
   - `specs/`: data specifications.
 - (3) `datasets.h`: reads CSV datasets into `std::vector<T>` for any data structure `T`, using reflection to map the columns in the header row to data members.
 - (4) `main.cpp`: The driver that reads the input data, registers every benchmark in `bench::AllKernels` for every generated layout of its data structure, runs them, and validates the results.
   - *output*: one result per benchmark, layout and problem size. Its name is `<benchmark>_<layout>`, e.g., `InvariantMassSequential_PartitionedContainer0123456`, and its counters are `problem_size` (elements), `bytes_for_all` (bytes of all input and output containers), `target_bytes` (the cache-based size it was chosen for), and with `--validation`, `validated` (1 = matches the validation data, -1 = does not, 0 = no validation data for this size).
+- `tests/`: tests of the framework itself; see [Tests](#tests).
 - `plot_results.py`: A script that contains several methods to plot the results of the benchmarks as a scatter plot or histogram. It reads an earlier CSV format of the results.
 
 Miscellaneous:
 - `generate_dataset.py`: generates input datasets (with a header row) and validation data for the benchmarks. See `--help` for more options on how to run the dataset generator. Generating validation data needs [ROOT](https://root.cern) with Python bindings; the reference implementations are in `validation/`, one module per kernel.
-- `test.cpp`: A test file that verifies the correctness of the data structure generator, using the containers in `layouts/generated/test.h`.
 - `run_in_batches.sh`: For data structures with many fields, the number of possible data layouts can be very large. This script compiles and runs the benchmarks in batches that contain a subset of possible data layouts to avoid running out of memory when compiling the generated data structures.
 - `docker/Dockerfile`: A Dockerfile that sets up the environment for running the benchmarks in a docker container.
 
@@ -40,12 +39,14 @@ To compile the benchmarks, you need to have the following installed:
  - A C++ compiler with support for C++26 reflection ([P2996](https://wg21.link/p2996)), e.g., GCC 16.
  - [google benchmark](https://github.com/google/benchmark) (1.9.3 or newer), used to run the benchmarks and report results.
  - [Likwid](https://github.com/rrze-hpc/likwid), used to determine CPU cache size to automatically set the problem size of the benchmarks.
+ - Python 3 with numpy, to generate the layouts (`layouts/generate_datastructures.py`).
 
 The containers must be generated before compiling (see below). The following commands are needed to compile:
 ```bash
 cmake .
 make
 ```
+
 ## How to Run
 ### Run with all generated data layouts
 ```
@@ -79,6 +80,12 @@ make
 likwid-pin -C <core_num> ./main --input <input list file> [--validation <validation list file>] [google benchmark options]
 ```
 Layouts are in the format of e.g., `0123456` for an AoS of a data structure with 7 fields, and `0_1_2_3_4_5_6` for an SoA.
+
+## Tests
+`tests/` checks that the framework works. The tests are built when configuring with `-DBUILD_TESTS=ON`, and run with `ctest --test-dir <build dir> --output-on-failure`. They generate their own layouts into the build directory, so they do not depend on `layouts/generated/`, and read pre-generated datasets from `tests/data/`.
+- `test_layouts.cpp`: the generated containers store each partition contiguously and aligned.
+- `test_framework.cpp`: the driver finds every generated layout of a data structure and no others; problem sizes are the largest that fit their byte targets; the input parser maps CSV columns to data members and rejects malformed datasets (`tests/data/parser/`); every kernel gives the reference results on every layout. The datasets `particles1.csv` and `particles2.csv` in `tests/data/` were generated with `generate_dataset.py dataset` (seeds 1 and 2), and the reference results next to them with `generate_dataset.py validation`.
+- `plugin/`: a data structure (`Cell`) and kernel (`Stencil`) plugged in without changing the framework. `test_plugin.cpp` checks the kernel on every `Cell` layout, and `check_plugin.py` runs `main.cpp` built with the `Cell` kernel next to the `Particle` kernels (`-DKERNELS_HEADER="cell_kernels.h" -DKERNELS=plugin::Kernels`) on `tests/data/cells.csv` and the `Particle` datasets. It checks that each kernel is registered for exactly the layouts of its own data structure, and that the `Particle` results validate. This build of `main.cpp` uses fixed byte targets (`-DTARGET_BYTES=16384,131072`) instead of cache-based ones, so the problem sizes, and the number of rows the datasets need, are the same on every machine.
 
 ## How to Modify
 The benchmark suite is intended to be easily modifiable to allow for different benchmarks and data structures. Here are some guidelines on how to modify the benchmark suite:
