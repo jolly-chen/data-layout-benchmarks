@@ -1,38 +1,27 @@
 import sys
 import argparse
 import importlib
-import numpy as np
+from pathlib import Path
 
-# Dataset generators, one per struct. Each yields rows with values for the columns it lists.
-# Columns must be named like data members of the struct, since main.cpp maps the header row
-# of a dataset to the members of the struct by name.
-
-
-def generate_particles(ngen, seed):
+def find_dataset_modules():
     """
-    Generate PtEtaPhiE vectors.
-    Based on https://github.com/root-project/root/blob/654a2c8eadac3409a65dc017279666e1cd5ccb6d/math/mathcore/test/stress/VectorTest.h#L43
+    Map struct names to the modules in dataset_generators/, one per struct.
+
+    The struct name is derived from the file name (snake_case file name -> CamelCase struct,
+    e.g. sub_particle.py -> SubParticle) instead of read from the module, so that listing
+    the choices does not import every generator and its dependencies.
     """
-    # Imported here, so that generating validation data does not need scipy
-    import scipy.stats
-
-    np.random.seed(seed)
-    for i in range(ngen):
-        pt = np.random.exponential(scale=10.0)
-        eta = np.random.uniform(-5.0, 5.0)
-        phi = np.random.rand() * 3.1415926535897931
-        if i % 50 == 0:
-            m = np.random.uniform(0.0, 10.0)
-        else:
-            m = scipy.stats.rel_breitwigner.rvs(1.0, 0.01)
-        e = np.sqrt((m**2) + (pt * np.cosh(eta)) ** 2)
-        yield [pt, eta, phi, e]
+    package_dir = Path(__file__).resolve().parent / "dataset_generators"
+    return {
+        "".join(part.capitalize() for part in path.stem.split("_")): f"dataset_generators.{path.stem}"
+        for path in sorted(package_dir.glob("*.py"))
+        # Skips __init__.py and private helper modules
+        if not path.stem.startswith("_")
+    }
 
 
-# struct name -> (columns, generator)
-DATASET_GENERATORS = {
-    "Particle": (["pt", "eta", "phi", "e"], generate_particles),
-}
+# struct name -> module in dataset_generators/ with its generator
+DATASET_MODULES = find_dataset_modules()
 
 # benchmark name -> module in validation/ with its reference implementation
 VALIDATION_MODULES = {
@@ -42,12 +31,13 @@ VALIDATION_MODULES = {
 
 
 def generate_dataset(args):
-    columns, generator = DATASET_GENERATORS[args.struct]
+    # Imported here, so that generating validation data does not need numpy/scipy
+    module = importlib.import_module(DATASET_MODULES[args.struct])
 
     print(f"Generating dataset with {args.ngen} {args.struct} elements to {args.output}")
     with open(args.output, "w") as dataset_file:
-        dataset_file.write(",".join(columns) + "\n")
-        for row in generator(args.ngen, args.seed):
+        dataset_file.write(",".join(module.COLUMNS) + "\n")
+        for row in module.generate(args.ngen, args.seed):
             dataset_file.write(",".join(str(v) for v in row) + "\n")
             dataset_file.flush()
 
@@ -70,7 +60,7 @@ def parse_args(args):
     gen_dataset.add_argument(
         "-s",
         "--struct",
-        choices=DATASET_GENERATORS.keys(),
+        choices=DATASET_MODULES.keys(),
         default="Particle",
         help="Struct to generate elements of (default: Particle)",
     )

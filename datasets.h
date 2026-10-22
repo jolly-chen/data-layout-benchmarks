@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <any>
+#include <array>
 #include <charconv>
 #include <cstddef>
 #include <filesystem>
@@ -33,14 +34,110 @@ inline std::string_view Trim(std::string_view text) {
   return text.substr(first, text.find_last_not_of(" \t\r") - first + 1);
 }
 
-/* Split line at commas, trimming whitespace around each token. */
-inline std::vector<std::string_view> SplitCsvLine(std::string_view line) {
+/* Split text at the commas that are neither inside brackets nor inside double
+   quotes, trimming whitespace around each token. Brackets are tracked so that
+   a vector value such as [1.0, 2.4] stays one token, even when it is not
+   quoted. Unbalanced brackets are not reported here: the rest of the text
+   then ends up in one token, which fails to parse as a value. */
+inline std::vector<std::string_view> SplitTopLevel(std::string_view text) {
   std::vector<std::string_view> tokens;
-  while (true) {
-    auto comma = line.find(',');
-    tokens.push_back(Trim(line.substr(0, comma)));
-    if (comma == std::string_view::npos) { return tokens; }
-    line.remove_prefix(comma + 1);
+  int depth = 0;
+  bool quoted = false;
+  size_t start = 0;
+  for (size_t i = 0; i < text.size(); ++i) {
+    char c = text[i];
+    if (c == '"') {
+      quoted = !quoted;
+    } else if (!quoted && c == '[') {
+      ++depth;
+    } else if (!quoted && c == ']') {
+      --depth;
+    } else if (!quoted && depth == 0 && c == ',') {
+      tokens.push_back(Trim(text.substr(start, i - start)));
+      start = i + 1;
+    }
+  }
+  tokens.push_back(Trim(text.substr(start)));
+  return tokens;
+}
+
+/* Split a CSV line into fields as SplitTopLevel does, and remove the double
+   quotes around a quoted field, e.g. "[1.0, 2.4]" as written by pandas.
+   Escaped quotes ("") inside a field are not supported. */
+inline std::vector<std::string_view> SplitCsvLine(std::string_view line) {
+  auto tokens = SplitTopLevel(line);
+  for (auto &token : tokens) {
+    if (token.size() >= 2 && token.front() == '"' && token.back() == '"') {
+      token = Trim(token.substr(1, token.size() - 2));
+    }
+  }
+  return tokens;
+}
+
+template <class M>
+struct is_std_vector : std::false_type {};
+template <class E, class A>
+struct is_std_vector<std::vector<E, A>> : std::true_type {};
+
+template <class M>
+struct is_std_array : std::false_type {};
+template <class E, size_t N>
+struct is_std_array<std::array<E, N>> : std::true_type {};
+
+/* Types that can be read from a CSV token: arithmetic types, and std::vector
+   and std::array of such types, written as [v1, v2, ...] (nested for nested
+   containers, e.g. [[1, 2], [3, 4]]). */
+template <class M>
+constexpr bool is_readable_v = [] {
+  if constexpr (std::is_arithmetic_v<M>) {
+    return true;
+  } else if constexpr (is_std_vector<M>::value || is_std_array<M>::value) {
+    return is_readable_v<typename M::value_type>;
+  } else {
+    return false;
+  }
+}();
+
+/* Parse token into value. Returns false if token is not a valid value of type M. */
+template <class M>
+bool ParseValue(std::string_view token, M &value) {
+  if constexpr (std::is_same_v<M, bool>) {
+    if (token != "0" && token != "1") { return false; }
+    value = token == "1";
+    return true;
+  } else if constexpr (std::is_arithmetic_v<M>) {
+    auto [end, ec] = std::from_chars(token.data(), token.data() + token.size(), value);
+    return ec == std::errc{} && end == token.data() + token.size();
+  } else if constexpr (is_std_vector<M>::value || is_std_array<M>::value) {
+    if (token.size() < 2 || token.front() != '[' || token.back() != ']') { return false; }
+    auto inner = Trim(token.substr(1, token.size() - 2));
+    // SplitTopLevel returns one empty token for an empty list
+    auto elements = inner.empty() ? std::vector<std::string_view>{} : SplitTopLevel(inner);
+    if constexpr (is_std_vector<M>::value) {
+      value.clear();
+      value.reserve(elements.size());
+      for (auto element : elements) {
+        // Parse into a local rather than into the vector, since std::vector<bool>
+        // has no addressable elements
+        typename M::value_type v{};
+        if (!ParseValue(element, v)) { return false; }
+        value.push_back(std::move(v));
+      }
+    } else {
+      // Fewer values than elements are allowed; the remaining elements are
+      // value-initialized, as for members without a column
+      if (elements.size() > value.size()) { return false; }
+      for (size_t i = 0; i < value.size(); ++i) {
+        if (i >= elements.size()) {
+          value[i] = typename M::value_type{};
+        } else if (!ParseValue(elements[i], value[i])) {
+          return false;
+        }
+      }
+    }
+    return true;
+  } else {
+    return false;
   }
 }
 
@@ -50,7 +147,7 @@ template <class T>
 std::string MemberNames(bool readable_only = false) {
   std::string names;
   template for (constexpr auto m : members<T>) {
-    if (!readable_only || std::is_arithmetic_v<typename[:std::meta::type_of(m):]>) {
+    if (!readable_only || is_readable_v<typename[:std::meta::type_of(m):]>) {
       if (!names.empty()) { names += ","; }
       names += std::meta::identifier_of(m);
     }
@@ -74,7 +171,7 @@ template <class T>
 bool IsReadableMember(int idx) {
   int i = 0;
   template for (constexpr auto m : members<T>) {
-    if (i++ == idx) { return std::is_arithmetic_v<typename[:std::meta::type_of(m):]>; }
+    if (i++ == idx) { return is_readable_v<typename[:std::meta::type_of(m):]>; }
   }
   return false;
 }
@@ -84,18 +181,7 @@ template <class T>
 bool SetMember(T &obj, int idx, std::string_view token) {
   int i = 0;
   template for (constexpr auto m : members<T>) {
-    if (i++ == idx) {
-      using M = typename[:std::meta::type_of(m):];
-      if constexpr (std::is_same_v<M, bool>) {
-        if (token != "0" && token != "1") { return false; }
-        obj.[:m:] = token == "1";
-        return true;
-      } else if constexpr (std::is_arithmetic_v<M>) {
-        auto [end, ec] = std::from_chars(token.data(), token.data() + token.size(), obj.[:m:]);
-        return ec == std::errc{} && end == token.data() + token.size();
-      }
-      return false;
-    }
+    if (i++ == idx) { return ParseValue(token, obj.[:m:]); }
   }
   return false;
 }
@@ -107,7 +193,13 @@ bool SetMember(T &obj, int idx, std::string_view token) {
  * The first line of the file must be a header row with the names of data
  * members of T, e.g. "pt,eta,phi,e". Each following line holds the values for
  * one element in the same order. Members of T without a column keep their
- * value-initialized value. */
+ * value-initialized value.
+ *
+ * Members of type std::vector or std::array (of arithmetic types, or nested)
+ * are written as [v1, v2, ...], optionally in double quotes, e.g.
+ * "[1.0, 2.4, 4.2]". A std::array takes at most as many values as it has
+ * elements, and value-initializes the elements without a value; a std::vector
+ * takes any number of values, including none ([]). */
 template <class T>
 std::vector<T> ReadCsv(const std::string &path, size_t rows) {
   using namespace datasets_detail;
@@ -134,8 +226,8 @@ std::vector<T> ReadCsv(const std::string &path, size_t rows) {
     }
     if (!IsReadableMember<T>(idx)) {
       throw std::runtime_error(std::format(
-          "Column '{}' in the header row of {} names a data member of {} with a non-arithmetic "
-          "type, which cannot be read from a CSV file",
+          "Column '{}' in the header row of {} names a data member of {} with a type that cannot "
+          "be read from a CSV file (only arithmetic types, and std::vector and std::array of them)",
           column, path, type_name));
     }
     if (std::ranges::contains(column_member, idx)) {
