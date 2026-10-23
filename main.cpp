@@ -269,23 +269,23 @@ void BM_OptimizeSecondC(benchmark::State &state, size_t n, size_t target_bytes) 
 
 /* Register benchmark K for every generated layout of K::value_type and every
  * target size, and reserve the input data it needs. */
-template <bench::BenchmarkDescriptor K>
-void Register(const std::vector<size_t> &target_bytes) {
-  ForEachLayout<typename K::value_type>([&]<class C>() {
-    static_assert(bench::BenchmarkFor<K, C>, "benchmark descriptor does not support this layout");
-    for (size_t target : target_bytes) {
-      const size_t n = bench::ProblemSize<K, C>(target, Alignment);
-      datasets.Reserve<typename K::value_type>(n, K::num_inputs);
-      benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_Generic<K, C>, n, target)
-          ->Unit(benchmark::kMillisecond);
-    }
-  });
-}
+// template <bench::BenchmarkDescriptor K>
+// void Register(const std::vector<size_t> &target_bytes) {
+//   ForEachLayout<typename K::value_type>([&]<class C>() {
+//     static_assert(bench::BenchmarkFor<K, C>, "benchmark descriptor does not support this layout");
+//     for (size_t target : target_bytes) {
+//       const size_t n = bench::ProblemSize<K, C>(target, Alignment);
+//       datasets.Reserve<typename K::value_type>(n, K::num_inputs);
+//       benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_Generic<K, C>, n, target)
+//           ->Unit(benchmark::kMillisecond);
+//     }
+//   });
+// }
 
-template <bench::BenchmarkDescriptor... K>
-void RegisterAll(std::tuple<K...> *, const std::vector<size_t> &target_bytes) {
-  (Register<K>(target_bytes), ...);
-}
+// template <bench::BenchmarkDescriptor... K>
+// void RegisterAll(std::tuple<K...> *, const std::vector<size_t> &target_bytes) {
+//   (Register<K>(target_bytes), ...);
+// }
 
 int main(int argc, char **argv) {
   benchmark::MaybeReenterWithoutASLR(argc, argv);
@@ -333,47 +333,47 @@ int main(int argc, char **argv) {
 
   benchmark::Initialize(&argc, argv);
   if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
+  // RegisterAll(static_cast<KERNELS *>(nullptr), target_bytes);
   ///////////////////////////////////  InvariantMass Random ///////////////////////////////////////
 
-  // RegisterAll(static_cast<KERNELS *>(nullptr), target_bytes);
-  // {
-  //   using K = bench::InvariantMassRandom;
-  //   ForEachLayout<typename K::value_type>([&]<class C>() {
-  //     for (size_t target : target_bytes) {
-  //       const size_t n = bench::ProblemSize<K, C, layouts::Particle::PartitionedContainer301_2_4>(target, Alignment);
-  //       datasets.Reserve<typename K::value_type>(n, K::num_inputs);
-  //       benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeFirstC<K, C>, n, target)
-  //                 ->Unit(benchmark::kMillisecond);
-  //     }
+  {
+    using K = bench::InvariantMassRandom;
+    ForEachLayout<Particle>([&]<class C>() {
+      for (size_t target : target_bytes) {
+        const size_t n = 100000 * 40;
+        datasets.Reserve<Particle>(n, K::num_inputs);
+        benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeFirstC<K, C, layouts::Particle::PartitionedContainer01234>, n, target)
+                  ->Unit(benchmark::kMillisecond);
+      }
 
-  //     for (size_t target : target_bytes) {
-  //       const size_t n = bench::ProblemSize<K, layouts::Particle::PartitionedContainer2130_4, C>(target, Alignment);
-  //       datasets.Reserve<typename K::value_type>(n, K::num_inputs);
-  //       benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeSecondC<K, C>, n, target)
-  //                 ->Unit(benchmark::kMillisecond);
-  //     }
-  //   });
-  // }
+      for (size_t target : target_bytes) {
+        const size_t n = 100000 * 40;
+        datasets.Reserve<Particle>(n, K::num_inputs);
+        benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeSecondC<K, C, layouts::Particle::PartitionedContainer01234>, n, target)
+                  ->Unit(benchmark::kMillisecond);
+      }
+    });
+  }
 
   ///////////////////////////////////  InvariantMass Random Output ///////////////////////////////////////
-  // {
-  //   using K = bench::InvariantMassRandomOut;
-  //   ForEachLayout<typename K::value_type>([&]<class C>() {
-  //     for (size_t target : target_bytes) {
-  //       const size_t n = bench::ProblemSize<K, C, layouts::ParticleOut::PartitionedContainer0_213_4>(target, Alignment);
-  //       datasets.Reserve<Particle>(n, K::num_inputs);
-  //       benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeFirstC<K, C>, n, target)
-  //                 ->Unit(benchmark::kMillisecond);
-  //     }
+  {
+      using K = bench::InvariantMassRandomOut;
+      ForEachLayout<ParticleOut>([&]<class C>() {
+      for (size_t target : target_bytes) {
+        const size_t n = 100000 * 25;
+        datasets.Reserve<Particle>(n, K::num_inputs);
+        benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeFirstC<K, C, layouts::ParticleOut::PartitionedContainer01234>, n, target)
+                  ->Unit(benchmark::kMillisecond);
+      }
 
-  //     for (size_t target : target_bytes) {
-  //       const size_t n = bench::ProblemSize<K, layouts::ParticleOut::PartitionedContainer023_1_4, C>(target, Alignment);
-  //       datasets.Reserve<Particle>(n, K::num_inputs);
-  //       benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeSecondC<K, C>, n, target)
-  //                 ->Unit(benchmark::kMillisecond);
-  //     }
-  //   });
-  // }
+      for (size_t target : target_bytes) {
+        const size_t n = 100000 * 25;
+        datasets.Reserve<Particle>(n, K::num_inputs);
+        benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeSecondC<K, C, layouts::ParticleOut::PartitionedContainer01234>, n, target)
+                  ->Unit(benchmark::kMillisecond);
+      }
+    });
+  }
 
   ///////////////////////////////////  Track Fitting ///////////////////////////////////////
   {
@@ -382,7 +382,7 @@ int main(int argc, char **argv) {
     using K = bench::FitTracks;
     ForEachLayout<Hit>([&]<class C>() {
       for (size_t target : target_bytes) {
-        const size_t n = 40000;
+        const size_t n = 40000 * 70;
         datasets.Reserve<Hit>(n * 10, 1);
         benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeFirstC<K, C, layouts::Track::PartitionedContainer01234>, n, target)
                   ->Unit(benchmark::kMillisecond);
@@ -391,7 +391,7 @@ int main(int argc, char **argv) {
 
     ForEachLayout<Track>([&]<class C>() {
       for (size_t target : target_bytes) {
-        const size_t n = 40000;
+        const size_t n = 40000 * 70;
         datasets.Reserve<Hit>(n * 10, 1);
         benchmark::RegisterBenchmark(std::string(K::name) + "_" + C::to_string(), BM_OptimizeSecondC<K, C, layouts::Hit::PartitionedContainer01234>, n, target)
                   ->Unit(benchmark::kMillisecond);
